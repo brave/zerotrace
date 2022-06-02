@@ -1,0 +1,70 @@
+<!doctype html>
+
+<html>
+  <head>
+    <meta charset = "utf-8">
+    <title>Calculate Latency Using WebSockets</title>
+  </head>
+
+  <body>
+    <h2>Calculate Latency Using WebSockets</h2>
+    <p>Server at test.reethika.info/echo runs a simple echo server that speaks WebSocket.</p>
+    <p>All measurement: </p><pre id="values"></pre>
+    <p>Median latency: </p><pre id="data"></pre>
+    <script>
+     function median(values){
+            if (values.length ===0) return 0;
+            values.sort(function(a,b){
+              return a-b;
+            });
+            var half = Math.floor(values.length / 2);
+            if (values.length % 2)
+              return values[half];
+            return (values[half - 1] + values[half]) / 2.0;
+          }
+      function roundToTwo(num) {    
+        return +(Math.round(num + "e+2")  + "e-2");
+      }
+
+      function getLatencyWebSocket() {
+        return new Promise(function (resolve, reject) {
+          // Create a Web Socket
+          const socket = new WebSocket('wss://test.reethika.info/echo');
+          socket.onerror = function (err) {
+            reject(err.toString());
+          }
+
+          var messages = [];
+          const latencies = [];
+
+          socket.onopen = function () {
+            socket.send(JSON.stringify({
+              type: 'ws-latency',
+              ts: roundToTwo(performance.now()),
+            }));
+          }
+
+          socket.onmessage = function (event) {
+            messages.push(JSON.parse(event.data));
+            if (messages.length <= 5) {
+              socket.send(JSON.stringify({
+                type: 'ws-latency',
+                ts: roundToTwo(performance.now()),
+              }));
+            } else {
+              for (let i = 0; i < messages.length - 1; i++) {
+                latencies.push(roundToTwo(messages[i+1].ts - messages[i].ts));
+              }
+              resolve(latencies);
+            }
+          }
+        });
+        }
+
+      getLatencyWebSocket().then((latencies) => {
+        document.getElementById('values').innerHTML = latencies;
+        document.getElementById('data').innerHTML = median(latencies);
+      });
+    </script>
+  </body>
+</html>
