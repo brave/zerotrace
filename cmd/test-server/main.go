@@ -6,6 +6,7 @@ import (
 	"flag"
 	"github.com/go-ping/ping"
 	"github.com/gorilla/websocket"
+	"html/template"
 	"log"
 	"net"
 	"net/http"
@@ -21,15 +22,22 @@ var (
 	EchoLogger *log.Logger
 )
 
+var wsTemplate, _ = template.ParseFiles("index.html")
+
 type RtItem struct {
 	IP        string
 	PktSent   int
 	PktRecv   int
 	PktLoss   float64
-	MinRtt    time.Duration
-	AvgRtt    time.Duration
-	MaxRtt    time.Duration
-	StdDevRtt time.Duration
+	MinRtt    float64
+	AvgRtt    float64
+	MaxRtt    float64
+	StdDevRtt float64
+}
+
+// Implementing this since Golang time.Milliseconds() function only returns an int64 value
+func fmtTimeMs(value time.Duration) float64 {
+	return (float64(value) / float64(time.Millisecond))
 }
 
 // Use with default options
@@ -81,15 +89,15 @@ func pingSrv(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 	stats := pinger.Statistics() // get send/receive/duplicate/rtt stats
-	item := RtItem{clientIP, stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss, stats.MinRtt, stats.AvgRtt, stats.MaxRtt, stats.StdDevRtt}
+	item := RtItem{clientIP, stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss, fmtTimeMs(stats.MinRtt), fmtTimeMs(stats.AvgRtt), fmtTimeMs(stats.MaxRtt), fmtTimeMs(stats.StdDevRtt)}
 	jsObj, err := json.Marshal(item)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	jsonString := string(jsObj)
-	http.ServeFile(w, r, "index.html")
 	InfoLogger.Println(jsonString)
+	wsTemplate.Execute(w, jsonString)
 }
 
 func main() {

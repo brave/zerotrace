@@ -7,11 +7,12 @@
   </head>
 
   <body>
-    <h2>Calculate Latency Using WebSockets</h2>
-    <p>Server at test.reethika.info/echo runs a simple echo server that speaks WebSocket.</p>
-    <p>All measurement: </p><pre id="values"></pre>
-    <p>Median latency: </p><pre id="data"></pre>
+    <h2>Calculate Latency Using WebSockets and Measure ICMP latency</h2>
+    <p>All WebSocket measurements: <pre id="values"></pre></p>
+    <p>Median WS latency: <pre id="data"></pre></p>
+    <p>Stats from ICMP Ping measurements: <pre id="icmp"></pre></p>
     <script>
+	    document.getElementById('icmp').innerHTML = {{ . }}
      function median(values){
             if (values.length ===0) return 0;
             values.sort(function(a,b){
