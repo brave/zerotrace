@@ -42,6 +42,11 @@ type tcpResult struct {
 	TimeInms       float64
 }
 
+type Results struct {
+	IcmpPing RtItem
+	TcpPing  []tcpResult
+}
+
 // Implementing this since Golang time.Milliseconds() function only returns an int64 value
 func fmtTimeMs(value time.Duration) float64 {
 	return (float64(value) / float64(time.Millisecond))
@@ -72,7 +77,7 @@ func echo(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func pingTcp(dst string, seq uint64, timeout time.Duration) {
+func pingTcp(dst string, seq uint64, timeout time.Duration) tcpResult {
 	startTime := time.Now()
 	conn, err := net.DialTimeout("tcp", dst, timeout)
 	endTime := time.Now()
@@ -85,33 +90,13 @@ func pingTcp(dst string, seq uint64, timeout time.Duration) {
 		resultJson, err := json.Marshal(result)
 		if err != nil {
 			InfoLogger.Println("JSON Error in TCPing: ", err)
-			return
+		} else {
+			resultString := string(resultJson)
+			InfoLogger.Println(resultString)
 		}
-		resultString := string(resultJson)
-		InfoLogger.Println(resultString)
+		return result
 	}
-
-}
-
-func tcpPingSrv(w http.ResponseWriter, r *http.Request) {
-	clientIPstr := r.RemoteAddr
-	clientIP, _, _ := net.SplitHostPort(clientIPstr)
-	var counter = 5
-	var seqNumber uint64 = 0
-	// For now, we just test port 80 TODO: Add ports commonly open from VPNalyzer study
-	var dst = fmt.Sprintf("%s:%d", clientIP, 80)
-	// TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
-	var timeout = time.Duration(1000) * time.Millisecond
-	var interval = time.Duration(1200) * time.Millisecond
-	ticker := time.NewTicker(interval)
-	for x := 0; x < counter; x++ {
-		seqNumber++
-		select {
-		case <-ticker.C:
-			pingTcp(dst, seqNumber, timeout)
-		}
-	}
-	ticker.Stop()
+	return tcpResult{dst, seq, 0}
 }
 
 func pingSrv(w http.ResponseWriter, r *http.Request) {
@@ -138,15 +123,32 @@ func pingSrv(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 	stats := pinger.Statistics() // get send/receive/duplicate/rtt stats
-	item := RtItem{clientIP, stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss, fmtTimeMs(stats.MinRtt), fmtTimeMs(stats.AvgRtt), fmtTimeMs(stats.MaxRtt), fmtTimeMs(stats.StdDevRtt)}
-	jsObj, err := json.Marshal(item)
+	icmp := RtItem{clientIP, stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss, fmtTimeMs(stats.MinRtt), fmtTimeMs(stats.AvgRtt), fmtTimeMs(stats.MaxRtt), fmtTimeMs(stats.StdDevRtt)}
+	var counter = 5
+	var seqNumber uint64 = 0
+	var dst = fmt.Sprintf("%s:%d", clientIP, 80)
+	// TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
+	var timeout = time.Duration(1000) * time.Millisecond
+	var interval = time.Duration(1200) * time.Millisecond
+	ticker := time.NewTicker(interval)
+	var tcpResultArr []tcpResult
+	for x := 0; x < counter; x++ {
+		seqNumber++
+		select {
+		case <-ticker.C:
+			tcpResultArr = append(tcpResultArr, pingTcp(dst, seqNumber, timeout))
+		}
+	}
+	ticker.Stop()
+	results := Results{icmp, tcpResultArr}
+	jsObj, err := json.Marshal(results)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	jsonString := string(jsObj)
-	InfoLogger.Println(jsonString)
-	wsTemplate.Execute(w, jsonString)
+	resultString := string(jsObj)
+	InfoLogger.Println(resultString)
+	wsTemplate.Execute(w, resultString)
 }
 
 func main() {
@@ -170,7 +172,6 @@ func main() {
 	fullChain := path.Join(certPath, "fullchain.pem")
 	privKey := path.Join(certPath, "privkey.pem")
 	http.HandleFunc("/ping", pingSrv)
-	http.HandleFunc("/tcping", tcpPingSrv)
 	http.HandleFunc("/echo", echo)
 	http.ListenAndServeTLS(":443", fullChain, privKey, nil)
 }

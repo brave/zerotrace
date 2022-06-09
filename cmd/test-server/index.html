@@ -7,10 +7,10 @@
   </head>
 
   <body>
-    <h2>Calculate Latency Using WebSockets and Measure ICMP latency</h2>
+    <h2>Calculate Latency Using WebSockets and Measure ICMP and TCP latency</h2>
     <p>All WebSocket measurements: <pre id="values"></pre></p>
     <p>Median WS latency: <pre id="data"></pre></p>
-    <p>Stats from ICMP Ping measurements: <pre id="icmp"></pre></p>
+    <p>Stats from ICMP and TCP Ping (Port 80) measurements: <pre id="icmp"></pre></p>
     <script>
 	    document.getElementById('icmp').innerHTML = {{ . }}
      function median(values){
