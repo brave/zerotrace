@@ -119,7 +119,7 @@ func pingTcp(dst string, seq uint64, timeout time.Duration) tcpResult {
 	return tcpResult{dst, seq, 0}
 }
 
-// Handlder for ICMP and TCP measurements which also serves the webpage via a template
+// Handler for ICMP and TCP measurements which also serves the webpage via a template
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/ping" {
 		http.NotFound(w, r)
@@ -132,7 +132,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
-	
+
 	// ICMP Pinger
 	pinger, err := ping.NewPinger(clientIP)
 	if err != nil {

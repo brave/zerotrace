@@ -10,9 +10,9 @@
     <h2>Calculate Latency Using WebSockets and Measure ICMP and TCP latency</h2>
     <p>All WebSocket measurements: <pre id="values"></pre></p>
     <p>Median WS latency: <pre id="data"></pre></p>
-    <p>Stats from ICMP and TCP Ping (Port 80) measurements: <pre id="icmp"></pre></p>
+    <p>Stats from ICMP and TCP Ping (Port 80) measurements, each with 5 probes: <pre id="allNwLatencies"></pre></p>
     <script>
-	    document.getElementById('icmp').innerHTML = {{ . }}
+	    document.getElementById('allNwLatencies').innerHTML = {{ . }}
      function median(values){
             if (values.length ===0) return 0;
             values.sort(function(a,b){
