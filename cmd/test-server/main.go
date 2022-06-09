@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"github.com/go-ping/ping"
 	"github.com/gorilla/websocket"
 	"html/template"
@@ -35,6 +36,12 @@ type RtItem struct {
 	StdDevRtt float64
 }
 
+type tcpResult struct {
+	Destination    string
+	SequenceNumber uint64
+	TimeInms       float64
+}
+
 // Implementing this since Golang time.Milliseconds() function only returns an int64 value
 func fmtTimeMs(value time.Duration) float64 {
 	return (float64(value) / float64(time.Millisecond))
@@ -63,6 +70,48 @@ func echo(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+}
+
+func pingTcp(dst string, seq uint64, timeout time.Duration) {
+	startTime := time.Now()
+	conn, err := net.DialTimeout("tcp", dst, timeout)
+	endTime := time.Now()
+	if err != nil {
+		InfoLogger.Println(dst, " connection failed")
+	} else {
+		defer conn.Close()
+		var t = float64(endTime.Sub(startTime)) / float64(time.Millisecond)
+		result := tcpResult{dst, seq, t}
+		resultJson, err := json.Marshal(result)
+		if err != nil {
+			InfoLogger.Println("JSON Error in TCPing: ", err)
+			return
+		}
+		resultString := string(resultJson)
+		InfoLogger.Println(resultString)
+	}
+
+}
+
+func tcpPingSrv(w http.ResponseWriter, r *http.Request) {
+	clientIPstr := r.RemoteAddr
+	clientIP, _, _ := net.SplitHostPort(clientIPstr)
+	var counter = 5
+	var seqNumber uint64 = 0
+	// For now, we just test port 80 TODO: Add ports commonly open from VPNalyzer study
+	var dst = fmt.Sprintf("%s:%d", clientIP, 80)
+	// TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
+	var timeout = time.Duration(1000) * time.Millisecond
+	var interval = time.Duration(1200) * time.Millisecond
+	ticker := time.NewTicker(interval)
+	for x := 0; x < counter; x++ {
+		seqNumber++
+		select {
+		case <-ticker.C:
+			pingTcp(dst, seqNumber, timeout)
+		}
+	}
+	ticker.Stop()
 }
 
 func pingSrv(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +170,7 @@ func main() {
 	fullChain := path.Join(certPath, "fullchain.pem")
 	privKey := path.Join(certPath, "privkey.pem")
 	http.HandleFunc("/ping", pingSrv)
+	http.HandleFunc("/tcping", tcpPingSrv)
 	http.HandleFunc("/echo", echo)
 	http.ListenAndServeTLS(":443", fullChain, privKey, nil)
 }
