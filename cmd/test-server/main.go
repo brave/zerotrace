@@ -1,4 +1,5 @@
-// Refer for webserver that speaks websocket: https://github.com/gorilla/websocket and for clientside websocket code:https://web.archive.org/web/20210614154432/https://incolumitas.com/2021/06/07/detecting-proxies-and-vpn-with-latencies/
+// Reference for webserver that speaks websocket: https://github.com/gorilla/websocket 
+// Reference for client side websocket code: https://web.archive.org/web/20210614154432/https://incolumitas.com/2021/06/07/detecting-proxies-and-vpn-with-latencies/
 package main
 
 import (
@@ -9,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 	"html/template"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -16,14 +18,24 @@ import (
 	"time"
 )
 
+const ICMPCount = 5
+const ICMPTimeout = time.Second * 10
+const TCPCounter = 5
+const PortsToTest = 80
+const TCPTimeout = time.Duration(1000) * time.Millisecond // TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
+const TCPInterval = time.Duration(1100) * time.Millisecond
+
+var WebTemplate, _ = template.ParseFiles("index.html")
+
+// Use with default options
+var upgrader = websocket.Upgrader{}
+
 var (
 	InfoLogger *log.Logger
 )
 var (
 	EchoLogger *log.Logger
 )
-
-var wsTemplate, _ = template.ParseFiles("index.html")
 
 type RtItem struct {
 	IP        string
@@ -52,10 +64,17 @@ func fmtTimeMs(value time.Duration) float64 {
 	return (float64(value) / float64(time.Millisecond))
 }
 
-// Use with default options
-var upgrader = websocket.Upgrader{}
-
-func echo(w http.ResponseWriter, r *http.Request) {
+// Handler for the echo webserver that speaks WebSocket
+func echoHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/echo" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != "GET" {
+		w.WriteHeader(http.StatusNotImplemented)
+		w.Write([]byte(http.StatusText(http.StatusNotImplemented)))
+		return
+	}
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		EchoLogger.Println("upgrade:", err)
@@ -77,6 +96,7 @@ func echo(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Function that sends out TcpPing
 func pingTcp(dst string, seq uint64, timeout time.Duration) tcpResult {
 	startTime := time.Now()
 	conn, err := net.DialTimeout("tcp", dst, timeout)
@@ -85,7 +105,7 @@ func pingTcp(dst string, seq uint64, timeout time.Duration) tcpResult {
 		InfoLogger.Println(dst, " connection failed")
 	} else {
 		defer conn.Close()
-		var t = float64(endTime.Sub(startTime)) / float64(time.Millisecond)
+		var t = fmtTimeMs(endTime.Sub(startTime))
 		result := tcpResult{dst, seq, t}
 		resultJson, err := json.Marshal(result)
 		if err != nil {
@@ -99,7 +119,8 @@ func pingTcp(dst string, seq uint64, timeout time.Duration) tcpResult {
 	return tcpResult{dst, seq, 0}
 }
 
-func pingSrv(w http.ResponseWriter, r *http.Request) {
+// Handlder for ICMP and TCP measurements which also serves the webpage via a template
+func pingHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/ping" {
 		http.NotFound(w, r)
 		return
@@ -111,35 +132,36 @@ func pingSrv(w http.ResponseWriter, r *http.Request) {
 	}
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
-
+	
+	// ICMP Pinger
 	pinger, err := ping.NewPinger(clientIP)
 	if err != nil {
 		panic(err)
 	}
-	pinger.Count = 3
-	pinger.Timeout = time.Second * 10
+	pinger.Count = ICMPCount
+	pinger.Timeout = ICMPTimeout
 	err = pinger.Run() // Blocks until finished.
 	if err != nil {
 		panic(err)
 	}
-	stats := pinger.Statistics() // get send/receive/duplicate/rtt stats
+	stats := pinger.Statistics()
 	icmp := RtItem{clientIP, stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss, fmtTimeMs(stats.MinRtt), fmtTimeMs(stats.AvgRtt), fmtTimeMs(stats.MaxRtt), fmtTimeMs(stats.StdDevRtt)}
-	var counter = 5
-	var seqNumber uint64 = 0
-	var dst = fmt.Sprintf("%s:%d", clientIP, 80)
-	// TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
-	var timeout = time.Duration(1000) * time.Millisecond
-	var interval = time.Duration(1200) * time.Millisecond
-	ticker := time.NewTicker(interval)
+
+	// TCP Pinger
+	var seqNumber uint64 = uint64(rand.Uint32())
+	var dst = fmt.Sprintf("%s:%d", clientIP, PortsToTest)
+	ticker := time.NewTicker(TCPInterval)
 	var tcpResultArr []tcpResult
-	for x := 0; x < counter; x++ {
+	for x := 0; x < TCPCounter; x++ {
 		seqNumber++
 		select {
 		case <-ticker.C:
-			tcpResultArr = append(tcpResultArr, pingTcp(dst, seqNumber, timeout))
+			tcpResultArr = append(tcpResultArr, pingTcp(dst, seqNumber, TCPTimeout))
 		}
 	}
 	ticker.Stop()
+
+	// Combine all results
 	results := Results{icmp, tcpResultArr}
 	jsObj, err := json.Marshal(results)
 	if err != nil {
@@ -148,7 +170,7 @@ func pingSrv(w http.ResponseWriter, r *http.Request) {
 	}
 	resultString := string(jsObj)
 	InfoLogger.Println(resultString)
-	wsTemplate.Execute(w, resultString)
+	WebTemplate.Execute(w, resultString)
 }
 
 func main() {
@@ -171,7 +193,7 @@ func main() {
 	certPath := "/etc/letsencrypt/live/test.reethika.info/"
 	fullChain := path.Join(certPath, "fullchain.pem")
 	privKey := path.Join(certPath, "privkey.pem")
-	http.HandleFunc("/ping", pingSrv)
-	http.HandleFunc("/echo", echo)
+	http.HandleFunc("/ping", pingHandler)
+	http.HandleFunc("/echo", echoHandler)
 	http.ListenAndServeTLS(":443", fullChain, privKey, nil)
 }
