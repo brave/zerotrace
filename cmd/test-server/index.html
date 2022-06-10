@@ -4,15 +4,48 @@
   <head>
     <meta charset = "utf-8">
     <title>Calculate Latency Using WebSockets</title>
+    <style>
+      table, th, td {
+        border: 0.5px solid black;
+        border-collapse: collapse;
+        text-align: center;
+      }
+    </style>
   </head>
 
   <body>
     <h2>Calculate Latency Using WebSockets and Measure ICMP and TCP latency</h2>
     <p>All WebSocket measurements: <pre id="values"></pre></p>
     <p>Median WS latency: <pre id="data"></pre></p>
-    <p>Stats from ICMP and TCP Ping (Port 80) measurements, each with 5 probes: <pre id="allNwLatencies"></pre></p>
-    <script>
-	    document.getElementById('allNwLatencies').innerHTML = {{ . }}
+    <table>
+      <tr>
+        <td>IP & Port</td>
+        <td>T1</td>
+        <td>T2</td>
+        <td>T3</td>
+        <td>T4</td>
+        <td>T5</td>
+      </tr>
+      {{ with .TcpPing }}
+        {{ range . }}
+        <tr>
+        <td>{{ .Destination }}</td>
+        {{ range $v := .TimesInms}}
+          <td>{{ $v }}</td>
+        {{end}}
+        </tr>
+      {{end}}
+    {{end}}
+  </table>
+  <div>
+  {{ with .IcmpPing}}
+    {{ range .}}
+    <p>All ICMP ping statistics: For {{ .IP }}, {{ .PktSent}} packets transmitted, {{ .PktRecv}} packets received, {{ .PktLoss}} packet loss</p>
+    <p>Round-Trip Avg, (min/max/stddev) =  {{ .AvgRtt }}, ({{ .MinRtt }}, {{ .MaxRtt }}, {{ .StdDevRtt }})</p>
+    {{end}}
+  {{end}}
+</div>
+      <script>
      function median(values){
             if (values.length ===0) return 0;
             values.sort(function(a,b){

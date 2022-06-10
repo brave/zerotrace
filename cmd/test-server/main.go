@@ -1,4 +1,4 @@
-// Reference for webserver that speaks websocket: https://github.com/gorilla/websocket 
+// Reference for webserver that speaks websocket: https://github.com/gorilla/websocket
 // Reference for client side websocket code: https://web.archive.org/web/20210614154432/https://incolumitas.com/2021/06/07/detecting-proxies-and-vpn-with-latencies/
 package main
 
@@ -48,14 +48,19 @@ type RtItem struct {
 	StdDevRtt float64
 }
 
-type tcpResult struct {
+type tcpProbeResult struct {
 	Destination    string
 	SequenceNumber uint64
-	TimeInms       float64
+	Timeinms       float64
+}
+
+type tcpResult struct {
+	Destination string
+	TimesInms   []float64
 }
 
 type Results struct {
-	IcmpPing RtItem
+	IcmpPing []RtItem
 	TcpPing  []tcpResult
 }
 
@@ -97,7 +102,7 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Function that sends out TcpPing
-func pingTcp(dst string, seq uint64, timeout time.Duration) tcpResult {
+func pingTcp(dst string, seq uint64, timeout time.Duration) float64 {
 	startTime := time.Now()
 	conn, err := net.DialTimeout("tcp", dst, timeout)
 	endTime := time.Now()
@@ -106,7 +111,7 @@ func pingTcp(dst string, seq uint64, timeout time.Duration) tcpResult {
 	} else {
 		defer conn.Close()
 		var t = fmtTimeMs(endTime.Sub(startTime))
-		result := tcpResult{dst, seq, t}
+		result := tcpProbeResult{dst, seq, t}
 		resultJson, err := json.Marshal(result)
 		if err != nil {
 			InfoLogger.Println("JSON Error in TCPing: ", err)
@@ -114,9 +119,9 @@ func pingTcp(dst string, seq uint64, timeout time.Duration) tcpResult {
 			resultString := string(resultJson)
 			InfoLogger.Println(resultString)
 		}
-		return result
+		return t
 	}
-	return tcpResult{dst, seq, 0}
+	return 0
 }
 
 // Handler for ICMP and TCP measurements which also serves the webpage via a template
@@ -145,21 +150,25 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 	stats := pinger.Statistics()
-	icmp := RtItem{clientIP, stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss, fmtTimeMs(stats.MinRtt), fmtTimeMs(stats.AvgRtt), fmtTimeMs(stats.MaxRtt), fmtTimeMs(stats.StdDevRtt)}
+	var icmp []RtItem
+	icmp = append(icmp, RtItem{clientIP, stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss, fmtTimeMs(stats.MinRtt), fmtTimeMs(stats.AvgRtt), fmtTimeMs(stats.MaxRtt), fmtTimeMs(stats.StdDevRtt)})
 
 	// TCP Pinger
+	rand.Seed(time.Now().UnixNano()) // Or each time we restart server the sequences would repeat
 	var seqNumber uint64 = uint64(rand.Uint32())
 	var dst = fmt.Sprintf("%s:%d", clientIP, PortsToTest)
 	ticker := time.NewTicker(TCPInterval)
 	var tcpResultArr []tcpResult
+	var tResult []float64
 	for x := 0; x < TCPCounter; x++ {
 		seqNumber++
 		select {
 		case <-ticker.C:
-			tcpResultArr = append(tcpResultArr, pingTcp(dst, seqNumber, TCPTimeout))
+			tResult = append(tResult, pingTcp(dst, seqNumber, TCPTimeout))
 		}
 	}
 	ticker.Stop()
+	tcpResultArr = append(tcpResultArr, tcpResult{dst, tResult})
 
 	// Combine all results
 	results := Results{icmp, tcpResultArr}
@@ -170,7 +179,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	resultString := string(jsObj)
 	InfoLogger.Println(resultString)
-	WebTemplate.Execute(w, resultString)
+	WebTemplate.Execute(w, results)
 }
 
 func main() {
