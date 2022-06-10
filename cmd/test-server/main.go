@@ -169,7 +169,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		ticker.Stop()
-		tcpResultArr = append(tcpResultArr, tcpResult{dst, tResult})	
+		tcpResultArr = append(tcpResultArr, tcpResult{dst, tResult})
 	}
 
 	// Combine all results
