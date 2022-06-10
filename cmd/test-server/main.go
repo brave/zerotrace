@@ -21,10 +21,10 @@ import (
 const ICMPCount = 5
 const ICMPTimeout = time.Second * 10
 const TCPCounter = 5
-const PortsToTest = 80
 const TCPTimeout = time.Duration(1000) * time.Millisecond // TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
 const TCPInterval = time.Duration(1100) * time.Millisecond
 
+var PortsToTest = [...]int{53, 80, 443, 8080, 8443}
 var WebTemplate, _ = template.ParseFiles("index.html")
 
 // Use with default options
@@ -154,21 +154,23 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	icmp = append(icmp, RtItem{clientIP, stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss, fmtTimeMs(stats.MinRtt), fmtTimeMs(stats.AvgRtt), fmtTimeMs(stats.MaxRtt), fmtTimeMs(stats.StdDevRtt)})
 
 	// TCP Pinger
-	rand.Seed(time.Now().UnixNano()) // Or each time we restart server the sequences would repeat
-	var seqNumber uint64 = uint64(rand.Uint32())
-	var dst = fmt.Sprintf("%s:%d", clientIP, PortsToTest)
-	ticker := time.NewTicker(TCPInterval)
 	var tcpResultArr []tcpResult
-	var tResult []float64
-	for x := 0; x < TCPCounter; x++ {
-		seqNumber++
-		select {
-		case <-ticker.C:
-			tResult = append(tResult, pingTcp(dst, seqNumber, TCPTimeout))
+	rand.Seed(time.Now().UnixNano()) // Or each time we restart server the sequences would repeat
+	for _, port := range PortsToTest {
+		var seqNumber uint64 = uint64(rand.Uint32())
+		var dst = fmt.Sprintf("%s:%d", clientIP, port)
+		ticker := time.NewTicker(TCPInterval)
+		var tResult []float64
+		for x := 0; x < TCPCounter; x++ {
+			seqNumber++
+			select {
+			case <-ticker.C:
+				tResult = append(tResult, pingTcp(dst, seqNumber, TCPTimeout))
+			}
 		}
+		ticker.Stop()
+		tcpResultArr = append(tcpResultArr, tcpResult{dst, tResult})	
 	}
-	ticker.Stop()
-	tcpResultArr = append(tcpResultArr, tcpResult{dst, tResult})
 
 	// Combine all results
 	results := Results{icmp, tcpResultArr}
