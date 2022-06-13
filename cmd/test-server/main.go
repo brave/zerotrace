@@ -95,7 +95,8 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 			ErrLogger.Println("read:", err)
 			break
 		}
-		InfoLogger.Println(message)
+		// ReadMessage() returns messageType int, p []byte, err error
+		InfoLogger.Println(string(message))
 		err = c.WriteMessage(mt, message)
 		if err != nil {
 			ErrLogger.Println("write:", err)
@@ -120,7 +121,8 @@ func pingTcp(dst string, seq uint64, timeout time.Duration) float64 {
 			ErrLogger.Println("JSON Error in TCPing: ", err)
 		} else {
 			resultString := string(resultJson)
-			InfoLogger.Println(resultString)
+			// Intermediate results also logged to ErrLogger
+			ErrLogger.Println(resultString)
 		}
 		return t
 	}
