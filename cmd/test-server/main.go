@@ -201,21 +201,21 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	var logfilePath string
-	var echologPath string
+	var errlogPath string
 	flag.StringVar(&logfilePath, "logfile", "logFile.txt", "Path to log file")
-	flag.StringVar(&echologPath, "echolog", "echoLog.txt", "Path to echo server log file")
+	flag.StringVar(&errlogPath, "errlog", "errlog.txt", "Path to err log file")
 	flag.Parse()
 	file, err := os.OpenFile(logfilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
-	echoFile, err := os.OpenFile(echologPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	errFile, err := os.OpenFile(errlogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	InfoLogger = log.New(file, "", log.Ldate|log.Ltime)
-	ErrLogger = log.New(echoFile, "", log.Ldate|log.Ltime)
+	ErrLogger = log.New(errFile, "", log.Ldate|log.Ltime)
 	certPath := "/etc/letsencrypt/live/test.reethika.info/"
 	fullChain := path.Join(certPath, "fullchain.pem")
 	privKey := path.Join(certPath, "privkey.pem")
