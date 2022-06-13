@@ -15,6 +15,7 @@
 
   <body>
     <h2>Calculate Latency Using WebSockets and Measure ICMP and TCP latency</h2>
+    <p>Experiment UUID: <pre id="uuid"></pre></p>
     <p>All WebSocket measurements: <pre id="values"></pre></p>
     <p>Median WS latency: <pre id="data"></pre></p>
     <table>
@@ -89,6 +90,9 @@
                 ts: roundToTwo(performance.now()),
               }));
             } else {
+              for (let i = 0; i < messages.length - 1; i++) {
+                latencies.push(roundToTwo(messages[i+1].ts - messages[i].ts));
+              }
               if (statsSent == false) {
               socket.send(JSON.stringify({
                 UUID: uuid,
@@ -97,9 +101,6 @@
               }));
               statsSent = true;
             }
-              for (let i = 0; i < messages.length - 1; i++) {
-                latencies.push(roundToTwo(messages[i+1].ts - messages[i].ts));
-              }
               resolve(latencies);
             }
           }
@@ -107,6 +108,7 @@
         }
 
       getLatencyWebSocket().then((latencies) => {
+        document.getElementById('uuid').innerHTML = {{ .UUID }};
         document.getElementById('values').innerHTML = latencies;
         document.getElementById('data').innerHTML = median(latencies);
       });
