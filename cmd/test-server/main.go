@@ -35,7 +35,7 @@ var (
 	InfoLogger *log.Logger
 )
 var (
-	EchoLogger *log.Logger
+	ErrLogger *log.Logger
 )
 
 type RtItem struct {
@@ -85,20 +85,20 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		EchoLogger.Println("upgrade:", err)
+		ErrLogger.Println("upgrade:", err)
 		return
 	}
 	defer c.Close()
 	for {
 		mt, message, err := c.ReadMessage()
 		if err != nil {
-			EchoLogger.Println("read:", err)
+			ErrLogger.Println("read:", err)
 			break
 		}
-		log.Printf("recv: %s", message)
+		InfoLogger.Println(message)
 		err = c.WriteMessage(mt, message)
 		if err != nil {
-			EchoLogger.Println("write:", err)
+			ErrLogger.Println("write:", err)
 			break
 		}
 	}
@@ -110,14 +110,14 @@ func pingTcp(dst string, seq uint64, timeout time.Duration) float64 {
 	conn, err := net.DialTimeout("tcp", dst, timeout)
 	endTime := time.Now()
 	if err != nil {
-		InfoLogger.Println(dst, " connection failed")
+		ErrLogger.Println(dst, " connection failed")
 	} else {
 		defer conn.Close()
 		var t = fmtTimeMs(endTime.Sub(startTime))
 		result := tcpProbeResult{dst, seq, t}
 		resultJson, err := json.Marshal(result)
 		if err != nil {
-			InfoLogger.Println("JSON Error in TCPing: ", err)
+			ErrLogger.Println("JSON Error in TCPing: ", err)
 		} else {
 			resultString := string(resultJson)
 			InfoLogger.Println(resultString)
@@ -208,7 +208,7 @@ func main() {
 	}
 
 	InfoLogger = log.New(file, "", log.Ldate|log.Ltime)
-	EchoLogger = log.New(echoFile, "", log.Ldate|log.Ltime)
+	ErrLogger = log.New(echoFile, "", log.Ldate|log.Ltime)
 	certPath := "/etc/letsencrypt/live/test.reethika.info/"
 	fullChain := path.Join(certPath, "fullchain.pem")
 	privKey := path.Join(certPath, "privkey.pem")
