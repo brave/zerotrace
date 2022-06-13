@@ -84,7 +84,12 @@
 
           socket.onmessage = function (event) {
             messages.push(JSON.parse(event.data));
-            if (messages.length > 5) {
+            if (messages.length <= 5) {
+              socket.send(JSON.stringify({
+                type: 'ws-latency',
+                ts: roundToTwo(performance.now()),
+              }));
+            } else {
               for (let i = 0; i < messages.length - 1; i++) {
                 latencies.push(roundToTwo(messages[i+1].ts - messages[i].ts));
               }
