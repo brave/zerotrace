@@ -95,8 +95,13 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 			ErrLogger.Println("read:", err)
 			break
 		}
-		// ReadMessage() returns messageType int, p []byte, err error
-		InfoLogger.Println(string(message))
+		// ReadMessage() returns messageType int, p []byte, err error]
+		var wsData map[string]interface{}
+		json.Unmarshal(message, &wsData)
+		if wsData["type"] != "ws-latency" {
+			// Only log the final message with all latencies calculated
+			InfoLogger.Println(string(message))
+		}
 		err = c.WriteMessage(mt, message)
 		if err != nil {
 			ErrLogger.Println("write:", err)
