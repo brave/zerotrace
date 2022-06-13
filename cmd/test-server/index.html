@@ -62,6 +62,8 @@
 
       function getLatencyWebSocket() {
         return new Promise(function (resolve, reject) {
+          var ipaddress = {{ .IPaddr }};
+          var uuid = {{ .UUID }};
           // Create a Web Socket
           const socket = new WebSocket('wss://test.reethika.info/echo');
           socket.onerror = function (err) {
@@ -70,6 +72,7 @@
 
           var messages = [];
           const latencies = [];
+          var statsSent = false;
 
           socket.onopen = function () {
             socket.send(JSON.stringify({
@@ -86,6 +89,14 @@
                 ts: roundToTwo(performance.now()),
               }));
             } else {
+              if (statsSent == false) {
+              socket.send(JSON.stringify({
+                UUID: uuid,
+                IP: ipaddress,
+                latencies: latencies,
+              }));
+              statsSent = true;
+            }
               for (let i = 0; i < messages.length - 1; i++) {
                 latencies.push(roundToTwo(messages[i+1].ts - messages[i].ts));
               }

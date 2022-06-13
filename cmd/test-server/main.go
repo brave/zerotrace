@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/go-ping/ping"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"html/template"
 	"log"
@@ -24,7 +25,7 @@ const TCPCounter = 5
 const TCPTimeout = time.Duration(1000) * time.Millisecond // TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
 const TCPInterval = time.Duration(1100) * time.Millisecond
 
-var PortsToTest = [...]int{53, 80, 443, 8080, 8443}
+var PortsToTest = [...]int{53, 80, 443, 3389, 8080, 8443, 9100}
 var WebTemplate, _ = template.ParseFiles("index.html")
 
 // Use with default options
@@ -60,6 +61,8 @@ type tcpResult struct {
 }
 
 type Results struct {
+	UUID     string
+	IPaddr   string
 	IcmpPing []RtItem
 	TcpPing  []tcpResult
 }
@@ -137,6 +140,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
+	var expUUID = uuid.NewString()
 
 	// ICMP Pinger
 	pinger, err := ping.NewPinger(clientIP)
@@ -173,7 +177,11 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Combine all results
-	results := Results{icmp, tcpResultArr}
+	results := Results{
+		UUID:     expUUID,
+		IPaddr:   clientIP,
+		IcmpPing: icmp,
+		TcpPing:  tcpResultArr}
 	jsObj, err := json.Marshal(results)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
