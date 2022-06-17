@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"time"
 )
 
@@ -115,21 +116,23 @@ func pingTcp(dst string, seq uint64, timeout time.Duration) float64 {
 	startTime := time.Now()
 	conn, err := net.DialTimeout("tcp", dst, timeout)
 	endTime := time.Now()
-	if err != nil {
-		ErrLogger.Println(dst, " connection failed")
-	} else {
-		defer conn.Close()
+	if err == nil || strings.Contains(err.Error(), "connection refused") {
+		if err == nil {
+			defer conn.Close()
+		}
 		var t = fmtTimeMs(endTime.Sub(startTime))
 		result := tcpProbeResult{dst, seq, t}
-		resultJson, err := json.Marshal(result)
-		if err != nil {
-			ErrLogger.Println("JSON Error in TCPing: ", err)
+		resultJson, parseErr := json.Marshal(result)
+		if parseErr != nil {
+			ErrLogger.Println("JSON Error in TCPing: ", parseErr)
 		} else {
 			resultString := string(resultJson)
 			// Intermediate results also logged to ErrLogger
 			ErrLogger.Println(resultString)
 		}
 		return t
+	} else {
+		ErrLogger.Println(dst, " connection failed with:", err)
 	}
 	return 0
 }
