@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"github.com/montanaflynn/stats"
 	"strings"
 	"time"
 )
@@ -59,6 +60,10 @@ type tcpProbeResult struct {
 type tcpResult struct {
 	Destination string
 	TimesInms   []float64
+	MinRtt    float64
+	AvgRtt    float64
+	MaxRtt    float64
+	StdDevRtt float64
 }
 
 type Results struct {
@@ -109,6 +114,15 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+}
+
+func getStats(arr []float64) (float64, float64, float64, float64) {
+	data := stats.LoadRawData(arr)
+	min, _ := stats.Min(data)
+	avg, _ := stats.Mean(data)
+	max, _ := stats.Max(data)
+	stddev, _ := stats.StandardDeviation(data)
+	return min, avg, max, stddev
 }
 
 // Function that sends out TcpPing
@@ -163,9 +177,9 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-	stats := pinger.Statistics()
+	stat := pinger.Statistics()
 	var icmp []RtItem
-	icmp = append(icmp, RtItem{clientIP, stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss, fmtTimeMs(stats.MinRtt), fmtTimeMs(stats.AvgRtt), fmtTimeMs(stats.MaxRtt), fmtTimeMs(stats.StdDevRtt)})
+	icmp = append(icmp, RtItem{clientIP, stat.PacketsSent, stat.PacketsRecv, stat.PacketLoss, fmtTimeMs(stat.MinRtt), fmtTimeMs(stat.AvgRtt), fmtTimeMs(stat.MaxRtt), fmtTimeMs(stat.StdDevRtt)})
 
 	// TCP Pinger
 	var tcpResultArr []tcpResult
@@ -183,7 +197,8 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		ticker.Stop()
-		tcpResultArr = append(tcpResultArr, tcpResult{dst, tResult})
+		min, avg, max, stddev := getStats(tResult)
+		tcpResultArr = append(tcpResultArr, tcpResult{dst, tResult, min, avg, max, stddev})
 	}
 
 	// Combine all results
@@ -205,7 +220,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	var logfilePath string
 	var errlogPath string
-	flag.StringVar(&logfilePath, "logfile", "logFile.txt", "Path to log file")
+	flag.StringVar(&logfilePath, "logfile", "logFile.jsonl", "Path to log file")
 	flag.StringVar(&errlogPath, "errlog", "errlog.txt", "Path to err log file")
 	flag.Parse()
 	file, err := os.OpenFile(logfilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
@@ -217,7 +232,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	InfoLogger = log.New(file, "", log.Ldate|log.Ltime)
+	InfoLogger = log.New(file, "", 0)
 	ErrLogger = log.New(errFile, "", log.Ldate|log.Ltime)
 	certPath := "/etc/letsencrypt/live/test.reethika.info/"
 	fullChain := path.Join(certPath, "fullchain.pem")

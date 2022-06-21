@@ -26,6 +26,7 @@
         <td>T3</td>
         <td>T4</td>
         <td>T5</td>
+        <td>Avg</td>
       </tr>
       {{ with .TcpPing }}
         {{ range . }}
@@ -34,6 +35,7 @@
         {{ range $v := .TimesInms}}
           <td>{{ $v }}</td>
         {{end}}
+          <td>{{ .AvgRtt }}</td>
         </tr>
       {{end}}
     {{end}}
