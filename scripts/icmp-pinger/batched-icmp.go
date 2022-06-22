@@ -57,13 +57,13 @@ func fmtTimeMs(value time.Duration) float64 {
 }
 
 func main() {
-	var logfilePath string
+	var outputfilePath string
 	var ipfilePath string
-	flag.StringVar(&logfilePath, "logfile", "output.jsonl", "Path to log file")
+	flag.StringVar(&outputfilePath, "outputfile", "output.jsonl", "Path to output file")
 	flag.StringVar(&ipfilePath, "inputfile", "ip-list.txt", "Path to input IP file")
 	flag.Parse()
 
-	file, err := os.OpenFile(logfilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	file, err := os.OpenFile(outputfilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
