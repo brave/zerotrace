@@ -4,13 +4,6 @@
   <head>
     <meta charset = "utf-8">
     <title>Calculate Latency Using WebSockets</title>
-    <style>
-      table, th, td {
-        border: 0.5px solid black;
-        border-collapse: collapse;
-        text-align: center;
-      }
-    </style>
   </head>
 
   <body>
@@ -18,36 +11,8 @@
     <p>Experiment UUID: <pre id="uuid"></pre></p>
     <p>All WebSocket measurements: <pre id="values"></pre></p>
     <p>Median WS latency: <pre id="data"></pre></p>
-    <table>
-      <tr>
-        <td>IP & Port</td>
-        <td>T1</td>
-        <td>T2</td>
-        <td>T3</td>
-        <td>T4</td>
-        <td>T5</td>
-        <td>Avg</td>
-      </tr>
-      {{ with .TcpPing }}
-        {{ range . }}
-        <tr>
-        <td>{{ .Destination }}</td>
-        {{ range $v := .TimesInms}}
-          <td>{{ $v }}</td>
-        {{end}}
-          <td>{{ .AvgRtt }}</td>
-        </tr>
-      {{end}}
-    {{end}}
-  </table>
-  <div>
-  {{ with .IcmpPing}}
-    {{ range .}}
-    <p>All ICMP ping statistics: For {{ .IP }}, {{ .PktSent}} packets transmitted, {{ .PktRecv}} packets received, {{ .PktLoss}} packet loss</p>
-    <p>Round-Trip Avg, (min/max/stddev) =  {{ .AvgRtt }}, ({{ .MinRtt }}, {{ .MaxRtt }}, {{ .StdDevRtt }})</p>
-    {{end}}
-  {{end}}
-</div>
+    <p>ICMP ping statistics: We conducted measaurements to all IPs adjacent to your IP (i.e. same /24 subnet), Average RTT:  <pre id="icmp"></pre></p>
+    <p>TCP ping statistics: we conducted TCP (SYN) measurements to six ports for all IPs adjacent to your IP (same /24 subnet), Average RTT:  <pre id="tcp"></pre></p>
       <script>
      function median(values){
             if (values.length ===0) return 0;
@@ -113,6 +78,8 @@
         document.getElementById('uuid').innerHTML = {{ .UUID }};
         document.getElementById('values').innerHTML = latencies;
         document.getElementById('data').innerHTML = median(latencies);
+        document.getElementById('icmp').innerHTML = {{ .AvgIcmpStat }};
+        document.getElementById('tcp').innerHTML = {{ .AvgTcpStat }};
       });
     </script>
   </body>

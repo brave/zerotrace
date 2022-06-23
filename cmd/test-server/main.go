@@ -9,15 +9,17 @@ import (
 	"github.com/go-ping/ping"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/montanaflynn/stats"
 	"html/template"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"net/http"
 	"os"
 	"path"
-	"github.com/montanaflynn/stats"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,6 +28,7 @@ const ICMPTimeout = time.Second * 10
 const TCPCounter = 5
 const TCPTimeout = time.Duration(1000) * time.Millisecond // TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
 const TCPInterval = time.Duration(1100) * time.Millisecond
+const batchSizeLimit int = 100 // rate becomes roughly 1000 ICMP and TCP packets per batch (100 IPs * 10 packets per IP)
 
 var PortsToTest = [...]int{53, 80, 443, 3389, 8080, 8443, 9100}
 var WebTemplate, _ = template.ParseFiles("index.html")
@@ -58,24 +61,53 @@ type tcpProbeResult struct {
 }
 
 type tcpResult struct {
-	Destination string
-	TimesInms   []float64
+	Port      int
+	TimesInms []float64
 	MinRtt    float64
 	AvgRtt    float64
 	MaxRtt    float64
 	StdDevRtt float64
 }
 
+type tcpStruct struct {
+	IP     string
+	Probes []tcpResult
+}
+
 type Results struct {
-	UUID     string
-	IPaddr   string
-	IcmpPing []RtItem
-	TcpPing  []tcpResult
+	UUID        string
+	IPaddr      string
+	IcmpPing    []RtItem
+	AvgIcmpStat float64
+	TcpPing     []tcpStruct
+	AvgTcpStat  float64
 }
 
 // Implementing this since Golang time.Milliseconds() function only returns an int64 value
 func fmtTimeMs(value time.Duration) float64 {
 	return (float64(value) / float64(time.Millisecond))
+}
+
+func increment(ip net.IP) {
+	for j := len(ip) - 1; j >= 0; j-- {
+		ip[j]++
+		if ip[j] > 0 {
+			break
+		}
+	}
+}
+
+func getAdjacentIPs(clientIP string) []string {
+	var requiredSubnet = clientIP + "/24"
+	var adjIPs []string
+	ip, ipnet, err := net.ParseCIDR(requiredSubnet)
+	if err != nil {
+		log.Fatal("Error getting adjacent IPs", err)
+	}
+	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); increment(ip) {
+		adjIPs = append(adjIPs, ip.String())
+	}
+	return adjIPs
 }
 
 // Handler for the echo webserver that speaks WebSocket
@@ -126,7 +158,7 @@ func getStats(arr []float64) (float64, float64, float64, float64) {
 }
 
 // Function that sends out TcpPing
-func pingTcp(dst string, seq uint64, timeout time.Duration) float64 {
+func sendTcpPing(dst string, seq uint64, timeout time.Duration) float64 {
 	startTime := time.Now()
 	conn, err := net.DialTimeout("tcp", dst, timeout)
 	endTime := time.Now()
@@ -151,6 +183,80 @@ func pingTcp(dst string, seq uint64, timeout time.Duration) float64 {
 	return 0
 }
 
+func IcmpPinger(ip string) RtItem {
+	pinger, err := ping.NewPinger(ip)
+	if err != nil {
+		panic(err)
+	}
+	pinger.Count = ICMPCount
+	pinger.Timeout = ICMPTimeout
+	err = pinger.Run() // Blocks until finished.
+	if err != nil {
+		panic(err)
+	}
+	stat := pinger.Statistics()
+	icmp := RtItem{ip, stat.PacketsSent, stat.PacketsRecv, stat.PacketLoss, fmtTimeMs(stat.MinRtt), fmtTimeMs(stat.AvgRtt), fmtTimeMs(stat.MaxRtt), fmtTimeMs(stat.StdDevRtt)}
+	return icmp
+}
+
+func TcpPinger(ip string) tcpStruct {
+	// TCP Pinger
+	var tcpResultArr []tcpResult
+	rand.Seed(time.Now().UnixNano()) // Or each time we restart server the sequences would repeat
+	for _, port := range PortsToTest {
+		var seqNumber uint64 = uint64(rand.Uint32())
+		var dst = fmt.Sprintf("%s:%d", ip, port)
+		ticker := time.NewTicker(TCPInterval)
+		var tResult []float64
+		for x := 0; x < TCPCounter; x++ {
+			seqNumber++
+			select {
+			case <-ticker.C:
+				tResult = append(tResult, sendTcpPing(dst, seqNumber, TCPTimeout))
+			}
+		}
+		ticker.Stop()
+		min, avg, max, stddev := getStats(tResult)
+		tcpResultArr = append(tcpResultArr, tcpResult{port, tResult, min, avg, max, stddev})
+	}
+	tcpResultObj := tcpStruct{ip, tcpResultArr}
+	return tcpResultObj
+}
+
+// Avg RTT from all successful ICMP measurements, to display on webpage
+func getAvgIcmpResult(icmp []RtItem) float64 {
+	var sum float64 = 0
+	var len float64 = 0
+	for _, x := range icmp {
+		if x.AvgRtt == 0 {
+			continue
+		}
+		sum += x.AvgRtt
+		len += 1
+	}
+	var avg float64 = sum / len
+	return avg
+}
+
+// Avg RTT from all successful TCP measurements regardless of port, to display on webpage
+func getAvgTcpResult(tcp []tcpStruct) float64 {
+	var sum float64 = 0
+	var len float64 = 0
+	// for each IP in subnet
+	for _, x := range tcp {
+		// for each port per IP
+		for _, p := range x.Probes {
+			if p.AvgRtt == 0 {
+				continue
+			}
+			sum += p.AvgRtt
+			len += 1
+		}
+	}
+	var avg float64 = sum / len
+	return avg
+}
+
 // Handler for ICMP and TCP measurements which also serves the webpage via a template
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/ping" {
@@ -164,49 +270,46 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
+	adjIPstoPing := getAdjacentIPs(clientIP)
 	var expUUID = uuid.NewString()
 
-	// ICMP Pinger
-	pinger, err := ping.NewPinger(clientIP)
-	if err != nil {
-		panic(err)
-	}
-	pinger.Count = ICMPCount
-	pinger.Timeout = ICMPTimeout
-	err = pinger.Run() // Blocks until finished.
-	if err != nil {
-		panic(err)
-	}
-	stat := pinger.Statistics()
-	var icmp []RtItem
-	icmp = append(icmp, RtItem{clientIP, stat.PacketsSent, stat.PacketsRecv, stat.PacketLoss, fmtTimeMs(stat.MinRtt), fmtTimeMs(stat.AvgRtt), fmtTimeMs(stat.MaxRtt), fmtTimeMs(stat.StdDevRtt)})
+	ipTotal := len(adjIPstoPing)
+	offset := 0
+	numBatches := int(math.Ceil(float64(ipTotal / batchSizeLimit)))
+	var icmpResults []RtItem
+	var tcpResultsObj []tcpStruct
+	for i := 0; i <= numBatches; i++ {
+		lower := offset
+		upper := offset + batchSizeLimit
 
-	// TCP Pinger
-	var tcpResultArr []tcpResult
-	rand.Seed(time.Now().UnixNano()) // Or each time we restart server the sequences would repeat
-	for _, port := range PortsToTest {
-		var seqNumber uint64 = uint64(rand.Uint32())
-		var dst = fmt.Sprintf("%s:%d", clientIP, port)
-		ticker := time.NewTicker(TCPInterval)
-		var tResult []float64
-		for x := 0; x < TCPCounter; x++ {
-			seqNumber++
-			select {
-			case <-ticker.C:
-				tResult = append(tResult, pingTcp(dst, seqNumber, TCPTimeout))
-			}
+		if upper > ipTotal {
+			upper = ipTotal
 		}
-		ticker.Stop()
-		min, avg, max, stddev := getStats(tResult)
-		tcpResultArr = append(tcpResultArr, tcpResult{dst, tResult, min, avg, max, stddev})
+		batchIPs := adjIPstoPing[lower:upper]
+		offset += batchSizeLimit
+
+		var itemProcessingGroup sync.WaitGroup
+		itemProcessingGroup.Add(len(batchIPs))
+
+		for id := range batchIPs {
+			go func(IP string, id int) {
+				defer itemProcessingGroup.Done()
+				icmpResults = append(icmpResults, IcmpPinger(IP))
+				tcpResultsObj = append(tcpResultsObj, TcpPinger(IP))
+			}(batchIPs[id], id)
+		}
+		itemProcessingGroup.Wait()
 	}
 
 	// Combine all results
 	results := Results{
-		UUID:     expUUID,
-		IPaddr:   clientIP,
-		IcmpPing: icmp,
-		TcpPing:  tcpResultArr}
+		UUID:        expUUID,
+		IPaddr:      clientIP,
+		IcmpPing:    icmpResults,
+		AvgIcmpStat: getAvgIcmpResult(icmpResults),
+		TcpPing:     tcpResultsObj,
+		AvgTcpStat:  getAvgTcpResult(tcpResultsObj),
+	}
 	jsObj, err := json.Marshal(results)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
