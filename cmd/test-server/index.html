@@ -4,15 +4,22 @@
   <head>
     <meta charset = "utf-8">
     <title>Calculate Latency Using WebSockets</title>
+    <style>
+      p {
+        display: inline-block;
+      }
+    </style>
+
   </head>
 
   <body>
     <h2>Calculate Latency Using WebSockets and Measure ICMP and TCP latency</h2>
-    <p>Experiment UUID: <pre id="uuid"></pre></p>
-    <p>All WebSocket measurements: <pre id="values"></pre></p>
-    <p>Median WS latency: <pre id="data"></pre></p>
-    <p>ICMP ping statistics: We conducted measaurements to all IPs adjacent to your IP (i.e. same /24 subnet), Average RTT:  <pre id="icmp"></pre></p>
-    <p>TCP ping statistics: we conducted TCP (SYN) measurements to six ports for all IPs adjacent to your IP (same /24 subnet), Average RTT:  <pre id="tcp"></pre></p>
+    <p>Experiment UUID: &ensp;</p><p id="uuid"></p><br>
+    <p>Your IP: &ensp;</p><p id="ip"></p> <br>
+    <p>All WebSocket measurements: &ensp;</p><p id="values"></p> <br>
+    <p>Median WS latency: &ensp;</p><p id="data"></p> <br>
+    <p>ICMP ping statistics: We conducted measaurements to all IPs adjacent to your IP (i.e. same /24 subnet), Average RTT: &ensp;</p> <p id="icmp"></p> <br>
+    <p>TCP ping statistics: we conducted TCP (SYN) measurements to six ports for all IPs adjacent to your IP (same /24 subnet), Average RTT: &ensp;</p><p id="tcp"></p> <br>
       <script>
      function median(values){
             if (values.length ===0) return 0;
@@ -76,6 +83,7 @@
 
       getLatencyWebSocket().then((latencies) => {
         document.getElementById('uuid').innerHTML = {{ .UUID }};
+        document.getElementById('ip').innerHTML = {{ .IPaddr }};
         document.getElementById('values').innerHTML = latencies;
         document.getElementById('data').innerHTML = median(latencies);
         document.getElementById('icmp').innerHTML = {{ .AvgIcmpStat }};
