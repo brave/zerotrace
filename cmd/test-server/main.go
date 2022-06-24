@@ -204,22 +204,28 @@ func TcpPinger(ip string) tcpStruct {
 	// TCP Pinger
 	var tcpResultArr []tcpResult
 	rand.Seed(time.Now().UnixNano()) // Or each time we restart server the sequences would repeat
+	var portsWaitGroup sync.WaitGroup
+	portsWaitGroup.Add(len(PortsToTest))
 	for _, port := range PortsToTest {
-		var seqNumber uint64 = uint64(rand.Uint32())
-		var dst = fmt.Sprintf("%s:%d", ip, port)
-		ticker := time.NewTicker(TCPInterval)
-		var tResult []float64
-		for x := 0; x < TCPCounter; x++ {
-			seqNumber++
-			select {
-			case <-ticker.C:
-				tResult = append(tResult, sendTcpPing(dst, seqNumber, TCPTimeout))
+		go func(port int) {
+			defer portsWaitGroup.Done()
+			var seqNumber uint64 = uint64(rand.Uint32())
+			var dst = fmt.Sprintf("%s:%d", ip, port)
+			ticker := time.NewTicker(TCPInterval)
+			var tResult []float64
+			for x := 0; x < TCPCounter; x++ {
+				seqNumber++
+				select {
+				case <-ticker.C:
+					tResult = append(tResult, sendTcpPing(dst, seqNumber, TCPTimeout))
+				}
 			}
-		}
-		ticker.Stop()
-		min, avg, max, stddev := getStats(tResult)
-		tcpResultArr = append(tcpResultArr, tcpResult{port, tResult, min, avg, max, stddev})
+			ticker.Stop()
+			min, avg, max, stddev := getStats(tResult)
+			tcpResultArr = append(tcpResultArr, tcpResult{port, tResult, min, avg, max, stddev})
+		}(port)
 	}
+	portsWaitGroup.Wait()
 	tcpResultObj := tcpStruct{ip, tcpResultArr}
 	return tcpResultObj
 }
@@ -288,10 +294,10 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		batchIPs := adjIPstoPing[lower:upper]
 		offset += batchSizeLimit
-		
+
 		var icmpWaitGroup sync.WaitGroup
 		var tcpWaitGroup sync.WaitGroup
-		
+
 		icmpWaitGroup.Add(len(batchIPs))
 		tcpWaitGroup.Add(len(batchIPs))
 
