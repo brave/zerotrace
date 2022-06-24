@@ -1,0 +1,94 @@
+<!doctype html>
+
+<html>
+  <head>
+    <meta charset = "utf-8">
+    <title>Calculate Latency Using WebSockets</title>
+    <style>
+      p {
+        display: inline-block;
+      }
+    </style>
+
+  </head>
+
+  <body>
+    <h2>Calculate Latency Using WebSockets and Measure ICMP and TCP latency</h2>
+    <p>Experiment UUID: &ensp;</p><p id="uuid"></p><br>
+    <p>Your IP: &ensp;</p><p id="ip"></p> <br>
+    <p>All WebSocket measurements: &ensp;</p><p id="values"></p> <br>
+    <p>Median WS latency: &ensp;</p><p id="data"></p> <br>
+    <p>ICMP ping statistics: We conducted measaurements to all IPs adjacent to your IP (i.e. same /24 subnet), Average RTT: &ensp;</p> <p id="icmp"></p> <br>
+    <p>TCP ping statistics: we conducted TCP (SYN) measurements to six ports for all IPs adjacent to your IP (same /24 subnet), Average RTT: &ensp;</p><p id="tcp"></p> <br>
+      <script>
+     function median(values){
+            if (values.length ===0) return 0;
+            values.sort(function(a,b){
+              return a-b;
+            });
+            var half = Math.floor(values.length / 2);
+            if (values.length % 2)
+              return values[half];
+            return (values[half - 1] + values[half]) / 2.0;
+          }
+      function roundToTwo(num) {    
+        return +(Math.round(num + "e+2")  + "e-2");
+      }
+
+      function getLatencyWebSocket() {
+        return new Promise(function (resolve, reject) {
+          var ipaddress = {{ .IPaddr }};
+          var uuid = {{ .UUID }};
+          // Create a Web Socket
+          const socket = new WebSocket('wss://test.reethika.info/echo');
+          socket.onerror = function (err) {
+            reject(err.toString());
+          }
+
+          var messages = [];
+          const latencies = [];
+          var statsSent = false;
+
+          socket.onopen = function () {
+            socket.send(JSON.stringify({
+              type: 'ws-latency',
+              ts: roundToTwo(performance.now()),
+            }));
+          }
+
+          socket.onmessage = function (event) {
+            messages.push(JSON.parse(event.data));
+            if (messages.length <= 5) {
+              socket.send(JSON.stringify({
+                type: 'ws-latency',
+                ts: roundToTwo(performance.now()),
+              }));
+            } else {
+              for (let i = 0; i < messages.length - 1; i++) {
+                latencies.push(roundToTwo(messages[i+1].ts - messages[i].ts));
+              }
+              if (statsSent == false) {
+              socket.send(JSON.stringify({
+                UUID: uuid,
+                IP: ipaddress,
+                latencies: latencies,
+              }));
+              statsSent = true;
+            }
+              resolve(latencies);
+            }
+          }
+        });
+        }
+
+      getLatencyWebSocket().then((latencies) => {
+        document.getElementById('uuid').innerHTML = {{ .UUID }};
+        document.getElementById('ip').innerHTML = {{ .IPaddr }};
+        document.getElementById('values').innerHTML = latencies;
+        document.getElementById('data').innerHTML = median(latencies);
+        document.getElementById('icmp').innerHTML = {{ .AvgIcmpStat }};
+        document.getElementById('tcp').innerHTML = {{ .AvgTcpStat }};
+      });
+    </script>
+  </body>
+</html>

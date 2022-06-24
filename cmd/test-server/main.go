@@ -31,7 +31,7 @@ const TCPInterval = time.Duration(1100) * time.Millisecond
 const batchSizeLimit int = 100 // rate becomes roughly 1000 ICMP and TCP packets per batch (100 IPs * 10 packets per IP)
 
 var PortsToTest = [...]int{53, 80, 443, 3389, 8080, 8443, 9100}
-var WebTemplate, _ = template.ParseFiles("index.html")
+var directoryPath string
 
 // Use with default options
 var upgrader = websocket.Upgrader{}
@@ -77,6 +77,7 @@ type tcpStruct struct {
 type Results struct {
 	UUID        string
 	IPaddr      string
+	Timestamp   string
 	IcmpPing    []RtItem
 	AvgIcmpStat float64
 	TcpPing     []tcpStruct
@@ -272,7 +273,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
 	adjIPstoPing := getAdjacentIPs(clientIP)
 	var expUUID = uuid.NewString()
-
+	var timestamp = time.Now().Format("2006-01-02T15:04:05.000000") //RFC3339 style date with added seconds information
 	ipTotal := len(adjIPstoPing)
 	offset := 0
 	numBatches := int(math.Ceil(float64(ipTotal / batchSizeLimit)))
@@ -305,6 +306,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	results := Results{
 		UUID:        expUUID,
 		IPaddr:      clientIP,
+		Timestamp:   timestamp,
 		IcmpPing:    icmpResults,
 		AvgIcmpStat: getAvgIcmpResult(icmpResults),
 		TcpPing:     tcpResultsObj,
@@ -317,12 +319,28 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	resultString := string(jsObj)
 	InfoLogger.Println(resultString)
+	var WebTemplate, _ = template.ParseFiles(path.Join(directoryPath, "pingpage.html"))
 	WebTemplate.Execute(w, results)
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != "GET" {
+		w.WriteHeader(http.StatusNotImplemented)
+		w.Write([]byte(http.StatusText(http.StatusNotImplemented)))
+		return
+	}
+	path := path.Join(directoryPath, "/index.html")
+	http.ServeFile(w, r, path)
 }
 
 func main() {
 	var logfilePath string
 	var errlogPath string
+	flag.StringVar(&directoryPath, "dirpath", "", "Path where this code lives, used to index the html file paths")
 	flag.StringVar(&logfilePath, "logfile", "logFile.jsonl", "Path to log file")
 	flag.StringVar(&errlogPath, "errlog", "errlog.txt", "Path to err log file")
 	flag.Parse()
@@ -340,6 +358,7 @@ func main() {
 	certPath := "/etc/letsencrypt/live/test.reethika.info/"
 	fullChain := path.Join(certPath, "fullchain.pem")
 	privKey := path.Join(certPath, "privkey.pem")
+	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/ping", pingHandler)
 	http.HandleFunc("/echo", echoHandler)
 	http.ListenAndServeTLS(":443", fullChain, privKey, nil)
