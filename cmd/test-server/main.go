@@ -28,10 +28,13 @@ const ICMPTimeout = time.Second * 10
 const TCPCounter = 5
 const TCPTimeout = time.Duration(1000) * time.Millisecond // TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
 const TCPInterval = time.Duration(1100) * time.Millisecond
-const batchSizeLimit int = 100 // rate becomes roughly 1000 ICMP and TCP packets per batch (100 IPs * 10 packets per IP)
+const batchSizeLimit int = 100 // rate per batch becomes roughly 100 IPs * (5 ICMP packets + 5 TCP packets *7 ports) packets per IP
 
 var PortsToTest = [...]int{53, 80, 443, 3389, 8080, 8443, 9100}
 var directoryPath string
+
+var icmpWaitGroup sync.WaitGroup
+var tcpWaitGroup sync.WaitGroup
 
 // Use with default options
 var upgrader = websocket.Upgrader{}
@@ -289,17 +292,21 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		batchIPs := adjIPstoPing[lower:upper]
 		offset += batchSizeLimit
 
-		var itemProcessingGroup sync.WaitGroup
-		itemProcessingGroup.Add(len(batchIPs))
+		icmpWaitGroup.Add(len(batchIPs))
+		tcpWaitGroup.Add(len(batchIPs))
 
 		for id := range batchIPs {
 			go func(IP string, id int) {
-				defer itemProcessingGroup.Done()
+				defer icmpWaitGroup.Done()
 				icmpResults = append(icmpResults, IcmpPinger(IP))
+			}(batchIPs[id], id)
+			go func(IP string, id int) {
+				defer tcpWaitGroup.Done()
 				tcpResultsObj = append(tcpResultsObj, TcpPinger(IP))
 			}(batchIPs[id], id)
 		}
-		itemProcessingGroup.Wait()
+		icmpWaitGroup.Wait()
+		tcpWaitGroup.Wait()
 	}
 
 	// Combine all results
