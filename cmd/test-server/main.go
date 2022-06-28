@@ -149,7 +149,7 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getStats(arr []float64) (float64, float64, float64, float64) {
+func getTcpRttStats(arr []float64) (float64, float64, float64, float64) {
 	data := stats.LoadRawData(arr)
 	min, _ := stats.Min(data)
 	avg, _ := stats.Mean(data)
@@ -158,7 +158,7 @@ func getStats(arr []float64) (float64, float64, float64, float64) {
 	return min, avg, max, stddev
 }
 
-// Function that sends out TcpPing
+// Function that sends out TcpPing and returns RTT
 func sendTcpPing(dst string, seq uint64, timeout time.Duration) float64 {
 	startTime := time.Now()
 	conn, err := net.DialTimeout("tcp", dst, timeout)
@@ -221,7 +221,7 @@ func TcpPinger(ip string) tcpStruct {
 				}
 			}
 			ticker.Stop()
-			min, avg, max, stddev := getStats(tResult)
+			min, avg, max, stddev := getTcpRttStats(tResult)
 			tcpResultArr = append(tcpResultArr, tcpResult{port, tResult, min, avg, max, stddev})
 		}(port)
 	}
