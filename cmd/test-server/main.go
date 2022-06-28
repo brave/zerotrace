@@ -230,7 +230,7 @@ func TcpPinger(ip string) tcpStruct {
 }
 
 // Avg RTT from all successful ICMP measurements, to display on webpage
-func getAvgIcmpResult(icmp []RtItem) float64 {
+func getMeanIcmpRTT(icmp []RtItem) float64 {
 	var sum float64 = 0
 	var len float64 = 0
 	for _, x := range icmp {
@@ -245,7 +245,7 @@ func getAvgIcmpResult(icmp []RtItem) float64 {
 }
 
 // Avg RTT from all successful TCP measurements regardless of port, to display on webpage
-func getAvgTcpResult(tcp []tcpStruct) float64 {
+func getMeanTcpRTT(tcp []tcpStruct) float64 {
 	var sum float64 = 0
 	var len float64 = 0
 	// for each IP in subnet
@@ -323,9 +323,9 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		IPaddr:      clientIP,
 		Timestamp:   timestamp,
 		IcmpPing:    icmpResults,
-		AvgIcmpStat: getAvgIcmpResult(icmpResults),
+		AvgIcmpStat: getMeanIcmpRTT(icmpResults),
 		TcpPing:     tcpResultsObj,
-		AvgTcpStat:  getAvgTcpResult(tcpResultsObj),
+		AvgTcpStat:  getMeanTcpRTT(tcpResultsObj),
 	}
 	jsObj, err := json.Marshal(results)
 	if err != nil {
