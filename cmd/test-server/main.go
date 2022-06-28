@@ -113,13 +113,7 @@ func getAdjacentIPs(clientIP string) ([]string, error) {
 
 // Handler for the echo webserver that speaks WebSocket
 func echoHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/echo" {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != "GET" {
-		w.WriteHeader(http.StatusNotImplemented)
-		w.Write([]byte(http.StatusText(http.StatusNotImplemented)))
+	if checkHTTPParams(w, r, "/echo") {
 		return
 	}
 	c, err := upgrader.Upgrade(w, r, nil)
@@ -226,7 +220,7 @@ func TcpPinger(ip string) tcpStruct {
 		}(port)
 	}
 	portsWaitGroup.Wait()
-	treturn tcpStruct{ip, tcpResultArr}
+	return tcpStruct{ip, tcpResultArr}
 }
 
 // Avg RTT from all successful ICMP measurements, to display on webpage
@@ -263,15 +257,23 @@ func getMeanTcpRTT(tcp []tcpStruct) float64 {
 	return avg
 }
 
-// Handler for ICMP and TCP measurements which also serves the webpage via a template
-func pingHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/ping" {
+// Checks if request method is GET, and ensures URL path is right
+func checkHTTPParams (w http.ResponseWriter, r *http.Request, pathstring string) bool {
+	if r.URL.Path != pathstring {
 		http.NotFound(w, r)
-		return
+		return true
 	}
 	if r.Method != "GET" {
 		w.WriteHeader(http.StatusNotImplemented)
 		w.Write([]byte(http.StatusText(http.StatusNotImplemented)))
+		return true
+	}
+	return false
+}
+
+// Handler for ICMP and TCP measurements which also serves the webpage via a template
+func pingHandler(w http.ResponseWriter, r *http.Request) {
+	if checkHTTPParams(w, r, "/ping") {
 		return
 	}
 	clientIPstr := r.RemoteAddr
@@ -337,13 +339,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != "GET" {
-		w.WriteHeader(http.StatusNotImplemented)
-		w.Write([]byte(http.StatusText(http.StatusNotImplemented)))
+	if checkHTTPParams(w, r, "/") {
 		return
 	}
 	path := path.Join(directoryPath, "/index.html")
