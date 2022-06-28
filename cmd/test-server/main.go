@@ -280,8 +280,6 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Error obtaining adjacent IPs: ", err)
 	}
-	var expUUID = uuid.NewString()
-	var timestamp = time.Now().Format("2006-01-02T15:04:05.000000") //RFC3339 style date with added seconds information
 	ipTotal := len(adjIPstoPing)
 	offset := 0
 	numBatches := int(math.Ceil(float64(ipTotal / batchSizeLimit)))
@@ -319,9 +317,9 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Combine all results
 	results := Results{
-		UUID:        expUUID,
+		UUID:        uuid.NewString(),
 		IPaddr:      clientIP,
-		Timestamp:   timestamp,
+		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"), //RFC3339 style UTC date time with added seconds information
 		IcmpPing:    icmpResults,
 		AvgIcmpStat: getMeanIcmpRTT(icmpResults),
 		TcpPing:     tcpResultsObj,
