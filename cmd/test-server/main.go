@@ -25,7 +25,7 @@ import (
 
 const ICMPCount = 5
 const ICMPTimeout = time.Second * 10
-const TCPCounter = 5
+const NumTCPPkts = 5
 const TCPTimeout = time.Duration(1000) * time.Millisecond // TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
 const TCPInterval = time.Duration(1100) * time.Millisecond
 const batchSizeLimit int = 100 // rate per batch becomes roughly 100 IPs * (5 ICMP packets + 5 TCP packets *7 ports) packets per IP
@@ -213,7 +213,7 @@ func TcpPinger(ip string) tcpStruct {
 			var dst = fmt.Sprintf("%s:%d", ip, port)
 			ticker := time.NewTicker(TCPInterval)
 			var tResult []float64
-			for x := 0; x < TCPCounter; x++ {
+			for x := 0; x < NumTCPPkts; x++ {
 				seqNumber++
 				select {
 				case <-ticker.C:
