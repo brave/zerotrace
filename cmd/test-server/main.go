@@ -98,17 +98,17 @@ func increment(ip net.IP) {
 	}
 }
 
-func getAdjacentIPs(clientIP string) []string {
+func getAdjacentIPs(clientIP string) ([]string, error) {
 	var requiredSubnet = clientIP + "/24"
 	var adjIPs []string
 	ip, ipnet, err := net.ParseCIDR(requiredSubnet)
 	if err != nil {
-		log.Fatal("Error getting adjacent IPs", err)
+		return []string{}, err
 	}
 	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); increment(ip) {
 		adjIPs = append(adjIPs, ip.String())
 	}
-	return adjIPs
+	return adjIPs, nil
 }
 
 // Handler for the echo webserver that speaks WebSocket
@@ -277,7 +277,10 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
-	adjIPstoPing := getAdjacentIPs(clientIP)
+	adjIPstoPing, err := getAdjacentIPs(clientIP)
+	if err != nil {
+		log.Println("Error obtaining adjacent IPs: ", err)
+	}
 	var expUUID = uuid.NewString()
 	var timestamp = time.Now().Format("2006-01-02T15:04:05.000000") //RFC3339 style date with added seconds information
 	ipTotal := len(adjIPstoPing)
