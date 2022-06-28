@@ -258,7 +258,7 @@ func getMeanTcpRTT(tcp []tcpStruct) float64 {
 }
 
 // Checks if request method is GET, and ensures URL path is right
-func checkHTTPParams (w http.ResponseWriter, r *http.Request, pathstring string) bool {
+func checkHTTPParams(w http.ResponseWriter, r *http.Request, pathstring string) bool {
 	if r.URL.Path != pathstring {
 		http.NotFound(w, r)
 		return true
@@ -285,6 +285,8 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	ipTotal := len(adjIPstoPing)
 	offset := 0
 	numBatches := int(math.Ceil(float64(ipTotal / batchSizeLimit)))
+
+	// Concurrently send ICMP and TCP pings to all <PortsToTest>, for a <batchSizeLimit> number of IPs
 	var icmpResults []RtItem
 	var tcpResultsObj []tcpStruct
 	for i := 0; i <= numBatches; i++ {
