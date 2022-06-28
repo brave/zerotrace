@@ -226,8 +226,7 @@ func TcpPinger(ip string) tcpStruct {
 		}(port)
 	}
 	portsWaitGroup.Wait()
-	tcpResultObj := tcpStruct{ip, tcpResultArr}
-	return tcpResultObj
+	treturn tcpStruct{ip, tcpResultArr}
 }
 
 // Avg RTT from all successful ICMP measurements, to display on webpage
