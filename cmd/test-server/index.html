@@ -1,119 +1,12 @@
-<!doctype html>
-
-<html>
-  <head>
-    <meta charset = "utf-8">
-    <title>Calculate Latency Using WebSockets</title>
-    <style>
-      table, th, td {
-        border: 0.5px solid black;
-        border-collapse: collapse;
-        text-align: center;
-      }
-    </style>
-  </head>
-
-  <body>
-    <h2>Calculate Latency Using WebSockets and Measure ICMP and TCP latency</h2>
-    <p>Experiment UUID: <pre id="uuid"></pre></p>
-    <p>All WebSocket measurements: <pre id="values"></pre></p>
-    <p>Median WS latency: <pre id="data"></pre></p>
-    <table>
-      <tr>
-        <td>IP & Port</td>
-        <td>T1</td>
-        <td>T2</td>
-        <td>T3</td>
-        <td>T4</td>
-        <td>T5</td>
-        <td>Avg</td>
-      </tr>
-      {{ with .TcpPing }}
-        {{ range . }}
-        <tr>
-        <td>{{ .Destination }}</td>
-        {{ range $v := .TimesInms}}
-          <td>{{ $v }}</td>
-        {{end}}
-          <td>{{ .AvgRtt }}</td>
-        </tr>
-      {{end}}
-    {{end}}
-  </table>
-  <div>
-  {{ with .IcmpPing}}
-    {{ range .}}
-    <p>All ICMP ping statistics: For {{ .IP }}, {{ .PktSent}} packets transmitted, {{ .PktRecv}} packets received, {{ .PktLoss}} packet loss</p>
-    <p>Round-Trip Avg, (min/max/stddev) =  {{ .AvgRtt }}, ({{ .MinRtt }}, {{ .MaxRtt }}, {{ .StdDevRtt }})</p>
-    {{end}}
-  {{end}}
+<HTML>
+<head>
+<title>Measurement Home Page</title>
+</head>
+<body bgcolor="FFFFFf">
+<div align="center">
+	<h1>We are running an experimental web server on this domain </h1>
+	<p>We are sending out ICMP probes and TCP SYN packets to some IPs in order to conduct latency measurements.</p>
+	<p>This is done only for research purposes and if you received such measurement, but wish to opt out, please contact <a href="mailto:rramesh+web@brave.com">rramesh@brave.com</a></p>
 </div>
-      <script>
-     function median(values){
-            if (values.length ===0) return 0;
-            values.sort(function(a,b){
-              return a-b;
-            });
-            var half = Math.floor(values.length / 2);
-            if (values.length % 2)
-              return values[half];
-            return (values[half - 1] + values[half]) / 2.0;
-          }
-      function roundToTwo(num) {    
-        return +(Math.round(num + "e+2")  + "e-2");
-      }
-
-      function getLatencyWebSocket() {
-        return new Promise(function (resolve, reject) {
-          var ipaddress = {{ .IPaddr }};
-          var uuid = {{ .UUID }};
-          // Create a Web Socket
-          const socket = new WebSocket('wss://test.reethika.info/echo');
-          socket.onerror = function (err) {
-            reject(err.toString());
-          }
-
-          var messages = [];
-          const latencies = [];
-          var statsSent = false;
-
-          socket.onopen = function () {
-            socket.send(JSON.stringify({
-              type: 'ws-latency',
-              ts: roundToTwo(performance.now()),
-            }));
-          }
-
-          socket.onmessage = function (event) {
-            messages.push(JSON.parse(event.data));
-            if (messages.length <= 5) {
-              socket.send(JSON.stringify({
-                type: 'ws-latency',
-                ts: roundToTwo(performance.now()),
-              }));
-            } else {
-              for (let i = 0; i < messages.length - 1; i++) {
-                latencies.push(roundToTwo(messages[i+1].ts - messages[i].ts));
-              }
-              if (statsSent == false) {
-              socket.send(JSON.stringify({
-                UUID: uuid,
-                IP: ipaddress,
-                latencies: latencies,
-              }));
-              statsSent = true;
-            }
-              resolve(latencies);
-            }
-          }
-        });
-        }
-
-      getLatencyWebSocket().then((latencies) => {
-        document.getElementById('uuid').innerHTML = {{ .UUID }};
-        document.getElementById('values').innerHTML = latencies;
-        document.getElementById('data').innerHTML = median(latencies);
-      });
-    </script>
-  </body>
+</body>
 </html>
