@@ -117,7 +117,7 @@ func getAdjacentIPs(clientIP string) ([]string, error) {
 	return adjIPs, nil
 }
 
-func debugPrintClientInfo(r *http.Request, handlerName) {
+func debugPrintClientInfo(r *http.Request, handlerName string) {
 	clientIPstr := r.RemoteAddr
 	clientIP, clientPort, _ := net.SplitHostPort(clientIPstr)
 	log.Println( handlerName, " HANDLER is : ", clientIP, " and port is: ", clientPort)
