@@ -2,42 +2,73 @@ package main
 
 import (
 	"flag"
-	"github.com/google/gopacket/pcap"
+	"fmt"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/gorilla/websocket"
 	"html/template"
 	"log"
 	"net"
 	"net/http"
-	"reflect"
+	"strconv"
 	"time"
 )
 
-var addr = flag.String("addr", "localhost:8080", "http service address")
+var addr = flag.String("addr", ":80", "http service address")
 
-var (
-	device       string = "en0"
-	snapshot_len int32  = 1024
-	promiscuous  bool   = false
-	err          error
-	timeout      time.Duration = 30 * time.Second
-	handle       *pcap.Handle
-)
+var buffer gopacket.SerializeBuffer
+var options gopacket.SerializeOptions
+
+const TCPTimeout = time.Duration(1000) * time.Millisecond
 
 var upgrader = websocket.Upgrader{} // use default options
+
+func tcpConn(clientIP string, clientPort string, netConn net.Conn) {
+	tcpConn := netConn.(*net.TCPConn)
+
+	clPort, _ := strconv.Atoi(clientPort)
+	dstIP := net.ParseIP(clientIP)
+	// Send raw bytes over wire
+	rawBytes := []byte("heeloo tcp")
+
+	ipLayer := &layers.IPv4{
+		Protocol: layers.IPProtocolTCP,
+		Version:  4,
+		DstIP:    dstIP,
+		TTL:      uint8(5), // low TTL so it does not reach client
+	}
+	tcpLayer := &layers.TCP{
+		SrcPort: layers.TCPPort(443),
+		DstPort: layers.TCPPort(clPort),
+		Seq:     11111,
+		ACK:     true,
+		PSH:     true,
+	}
+	// And create the packet with the layers
+	buffer = gopacket.NewSerializeBuffer()
+	gopacket.SerializeLayers(buffer, options,
+		ipLayer,
+		tcpLayer,
+		gopacket.Payload(rawBytes),
+	)
+	outgoingPacket := buffer.Bytes()
+
+	n, err := tcpConn.Write([]byte(outgoingPacket))
+	if err != nil {
+		log.Print(err)
+	}
+	if err == nil {
+		log.Print("n is: ", n)
+	}
+
+}
 
 func echo(w http.ResponseWriter, r *http.Request) {
 	clientIPstr := r.RemoteAddr
 	clientIP, clientPort, _ := net.SplitHostPort(clientIPstr)
 	log.Println("IP: ", clientIP, " and port: ", clientPort)
 
-	handle, err = pcap.OpenLive(device, snapshot_len, promiscuous, timeout)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer handle.Close()
-
 	c, err := upgrader.Upgrade(w, r, nil)
-	netConn := c.UnderlyingConn()
 
 	if err != nil {
 		log.Print("upgrade:", err)
@@ -45,8 +76,14 @@ func echo(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 
+	// Writing to the raw underlying connection wrapped by c directly
+	// will corrupt the WebSocket connection
+	netConn := c.UnderlyingConn()
+	fmt.Println(netConn.LocalAddr())
+	tcpConn(clientIP, clientPort, netConn)
+
 	for {
-		_, message, err := c.ReadMessage()
+		mt, message, err := c.ReadMessage()
 		if err != nil {
 			log.Println("read:", err)
 			break
@@ -57,15 +94,8 @@ func echo(w http.ResponseWriter, r *http.Request) {
 			log.Println("write:", err)
 			break
 		}
-		// Writing to the raw underlying connection wrapped by c  directly
-		// will corrupt the WebSocket connection
-
-		// tmpdata := "hello tcp"
-		// n, err := netConn.Write([]byte(tmpdata))
-		// if err == nil {
-		//  log.Print("n is: ", n)
-		// }
 	}
+
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
