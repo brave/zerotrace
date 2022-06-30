@@ -3,11 +3,14 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/go-ping/ping"
 	"github.com/google/uuid"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/gorilla/websocket"
 	"github.com/montanaflynn/stats"
 	"html/template"
@@ -19,6 +22,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -30,6 +34,8 @@ const TCPTimeout = time.Duration(1000) * time.Millisecond // TCP RTO is 1s (RFC 
 const TCPInterval = time.Duration(1100) * time.Millisecond
 const batchSizeLimit int = 100 // rate per batch becomes roughly 100 IPs * (5 ICMP packets + 5 TCP packets *7 ports) packets per IP
 
+var buffer gopacket.SerializeBuffer
+var options gopacket.SerializeOptions
 var PortsToTest = [...]int{53, 80, 443, 3389, 8080, 9100}
 var directoryPath string
 
@@ -111,11 +117,18 @@ func getAdjacentIPs(clientIP string) ([]string, error) {
 	return adjIPs, nil
 }
 
+func debugPrintClientInfo(r *http.Request, handlerName) {
+	clientIPstr := r.RemoteAddr
+	clientIP, clientPort, _ := net.SplitHostPort(clientIPstr)
+	log.Println( handlerName, " HANDLER is : ", clientIP, " and port is: ", clientPort)
+}
+
 // Handler for the echo webserver that speaks WebSocket
 func echoHandler(w http.ResponseWriter, r *http.Request) {
 	if checkHTTPParams(w, r, "/echo") {
 		return
 	}
+	debugPrintClientInfo(r, "echo")
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		ErrLogger.Println("upgrade:", err)
@@ -141,6 +154,65 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+}
+
+func funcTcpConn(clientIP string, clientPort string, netConn net.Conn) {
+	tempConn := netConn.(*tls.Conn)
+	tcpConn := tempConn.NetConn().(*net.TCPConn)
+	clPort, _ := strconv.Atoi(clientPort)
+	dstIP := net.ParseIP(clientIP)
+	// Send raw bytes over wire
+	rawBytes := []byte("heeloo tcp")
+
+	ipLayer := &layers.IPv4{
+			Protocol: layers.IPProtocolTCP,
+			Version: 4,
+			DstIP: dstIP,
+			TTL:   uint8(5),
+	}
+	tcpLayer := &layers.TCP{
+			SrcPort: layers.TCPPort(443),
+			DstPort: layers.TCPPort(clPort),
+			Seq:     11111,
+			PSH: true,
+			ACK: true,
+			//SYN: true,
+	}
+	// And create the packet with the layers
+	buffer = gopacket.NewSerializeBuffer()
+	gopacket.SerializeLayers(buffer, options,
+			ipLayer,
+			tcpLayer,
+			gopacket.Payload(rawBytes),
+	)
+	outgoingPacket := buffer.Bytes()
+
+	n, err := tcpConn.Write([]byte(outgoingPacket)) // Send a test packet with low TTL
+	if err != nil {
+		log.Print(err)
+	}
+	if err == nil {
+		log.Println("dst: ", dstIP," and port: ", clPort)
+		log.Print("n is: ", n)
+	}
+}
+
+func traceHandler(w http.ResponseWriter, r *http.Request) {
+	if checkHTTPParams(w, r, "/trace") {
+		return
+	}
+	clientIPstr := r.RemoteAddr
+	clientIP, clientPort, _ := net.SplitHostPort(clientIPstr)
+	debugPrintClientInfo(r, "trace")
+
+	c, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		ErrLogger.Println("upgrade:", err)
+		return
+	}
+	defer c.Close()
+	myConn := c.UnderlyingConn()
+	funcTcpConn(clientIP, clientPort, myConn)
 }
 
 func getTcpRttStats(arr []float64) (float64, float64, float64, float64) {
@@ -277,7 +349,9 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	clientIPstr := r.RemoteAddr
-	clientIP, _, _ := net.SplitHostPort(clientIPstr)
+	clientIP, clientPort, _ := net.SplitHostPort(clientIPstr)
+	debugPrintClientInfo(r, "ping")
+
 	adjIPstoPing, err := getAdjacentIPs(clientIP)
 	if err != nil {
 		log.Println("Error obtaining adjacent IPs: ", err)
@@ -372,5 +446,6 @@ func main() {
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/ping", pingHandler)
 	http.HandleFunc("/echo", echoHandler)
+	http.HandleFunc("/trace", traceHandler)
 	http.ListenAndServeTLS(":443", fullChain, privKey, nil)
 }

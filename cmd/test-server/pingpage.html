@@ -81,6 +81,21 @@
         });
         }
 
+    function makeAnotherWs() {
+          var ipaddress = {{ .IPaddr }};
+          var uuid = {{ .UUID }};
+          // Create a Web Socket
+          const socket = new WebSocket('wss://test.reethika.info/trace');
+          socket.onerror = function (err) {
+            reject(err.toString());
+          }
+          socket.onopen = function () {
+            socket.send("Hllo");
+          }
+    }
+
+	   makeAnotherWs();
+
       getLatencyWebSocket().then((latencies) => {
         document.getElementById('uuid').innerHTML = {{ .UUID }};
         document.getElementById('ip').innerHTML = {{ .IPaddr }};
