@@ -1,15 +1,18 @@
 // Reference for webserver that speaks websocket: https://github.com/gorilla/websocket
-// Reference for client side websocket code: https://web.archive.org/web/20210614154432/https://incolumitas.com/2021/06/07/detecting-proxies-and-vpn-with-latencies/
+// Reference for client side websocket code:
+// https://web.archive.org/web/20210614154432/https://incolumitas.com/2021/06/07/detecting-proxies-and-vpn-with-latencies/
 package main
 
 import (
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/go-ping/ping"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/montanaflynn/stats"
@@ -31,9 +34,13 @@ import (
 const ICMPCount = 5
 const ICMPTimeout = time.Second * 10
 const NumTCPPkts = 5
-const TCPTimeout = time.Duration(1000) * time.Millisecond // TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
+
+// TCP RTO is 1s (RFC 6298), so having a 1s timeout for RTT measurement makes sense
+const TCPTimeout = time.Duration(1000) * time.Millisecond
 const TCPInterval = time.Duration(1100) * time.Millisecond
-const batchSizeLimit int = 100 // rate per batch becomes roughly 100 IPs * (5 ICMP packets + 5 TCP packets *7 ports) packets per IP
+
+// rate per batch becomes roughly 100 IPs * (5 ICMP packets + 5 TCP packets *7 ports) packets per IP
+const batchSizeLimit int = 100
 const TTLValue = 2
 
 var buffer gopacket.SerializeBuffer
@@ -54,6 +61,7 @@ var (
 var (
 	ErrLogger *log.Logger
 )
+var deviceName string
 
 type RtItem struct {
 	IP        string
@@ -162,10 +170,60 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Parse TCP header from ICMP Response Payload
+func getTCPHeaderFromICMPResponsePayload(data []byte) (*layers.TCP, error) {
+	if len(data) < 1 {
+		return nil, errors.New("received invalid IP header")
+	}
+	ipHeaderLength := int((data[0] & 0x0F) * 4)
+
+	if len(data) < ipHeaderLength {
+		return nil, errors.New("length of ICMP packet too short to decode IP")
+	}
+
+	tcp := layers.TCP{}
+
+	tcp.DecodeFromBytes(data[ipHeaderLength:], gopacket.NilDecodeFeedback)
+	return &tcp, nil
+}
+
+func recvPackets(handle *pcap.Handle) {
+	packetStream := gopacket.NewPacketSource(handle, handle.LinkType())
+	for packet := range packetStream.Packets() {
+		if packet == nil {
+			continue
+		}
+		if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
+			tcp, _ := tcpLayer.(*layers.TCP)
+			log.Println("Found tcp.SrcPort", tcp.SrcPort)
+		}
+
+		if icmpLayer := packet.Layer(layers.LayerTypeICMPv4); icmpLayer != nil {
+			icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
+			tcp, err := getTCPHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
+			if err != nil {
+				continue
+			}
+			log.Println("Found tcp.SrcPort: icmp", tcp.SrcPort)
+		}
+
+	}
+}
+
 func funcTcpConn(clientIP string, clientPort string, netConn net.Conn) {
+	handle, err := pcap.OpenLive(deviceName, 65536, true, time.Second)
+	if err != nil {
+		log.Println("Handle error:", err)
+	}
+	clPort, _ := strconv.Atoi(clientPort)
+
+	if err = handle.SetBPFFilter(fmt.Sprintf("(tcp and port %d and host %s) or icmp", clPort, clientIP)); err != nil {
+		log.Fatal(err)
+	}
+	go recvPackets(handle)
+
 	tempConn := netConn.(*tls.Conn)
 	tcpConn := tempConn.NetConn()
-	clPort, _ := strconv.Atoi(clientPort)
 	dstIP := net.ParseIP(clientIP)
 	// Send raw bytes over wire
 	rawBytes := []byte("heeloo tcp")
@@ -195,7 +253,7 @@ func funcTcpConn(clientIP string, clientPort string, netConn net.Conn) {
 		gopacket.Payload(rawBytes),
 	)
 	ipConn := ipv4.NewConn(tcpConn)
-	err := ipConn.SetTTL(int(TTLValue))
+	err = ipConn.SetTTL(int(TTLValue))
 	if err != nil {
 		log.Println("Error setting ttl")
 	}
@@ -274,7 +332,8 @@ func IcmpPinger(ip string) RtItem {
 		panic(err)
 	}
 	stat := pinger.Statistics()
-	icmp := RtItem{ip, stat.PacketsSent, stat.PacketsRecv, stat.PacketLoss, fmtTimeMs(stat.MinRtt), fmtTimeMs(stat.AvgRtt), fmtTimeMs(stat.MaxRtt), fmtTimeMs(stat.StdDevRtt)}
+	icmp := RtItem{ip, stat.PacketsSent, stat.PacketsRecv, stat.PacketLoss, fmtTimeMs(stat.MinRtt),
+		fmtTimeMs(stat.AvgRtt), fmtTimeMs(stat.MaxRtt), fmtTimeMs(stat.StdDevRtt)}
 	return icmp
 }
 
@@ -407,9 +466,10 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Combine all results
 	results := Results{
-		UUID:        uuid.NewString(),
-		IPaddr:      clientIP,
-		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"), //RFC3339 style UTC date time with added seconds information
+		UUID:   uuid.NewString(),
+		IPaddr: clientIP,
+		//RFC3339 style UTC date time with added seconds information
+		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
 		IcmpPing:    icmpResults,
 		AvgIcmpStat: getMeanIcmpRTT(icmpResults),
 		TcpPing:     tcpResultsObj,
@@ -440,6 +500,7 @@ func main() {
 	flag.StringVar(&directoryPath, "dirpath", "", "Path where this code lives, used to index the html file paths")
 	flag.StringVar(&logfilePath, "logfile", "logFile.jsonl", "Path to log file")
 	flag.StringVar(&errlogPath, "errlog", "errlog.txt", "Path to err log file")
+	flag.StringVar(&deviceName, "deviceName", "eth0", "Interface name to listen on, default: eth0")
 	flag.Parse()
 	file, err := os.OpenFile(logfilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
