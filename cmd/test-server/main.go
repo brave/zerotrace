@@ -49,6 +49,7 @@ var options = gopacket.SerializeOptions{
 	ComputeChecksums: true,
 	FixLengths:       true,
 }
+
 const stringToSend = "heeloo tcp"
 
 var PortsToTest = [...]int{53, 80, 443, 3389, 8080, 9100}
@@ -105,6 +106,11 @@ type Results struct {
 	TcpPing     []tcpStruct
 	AvgTcpStat  float64
 }
+
+// type TracerouteResults struct {
+// 	UUID        string
+// 	Hops		map[int]net.IP
+// }
 
 // Implementing this since Golang time.Milliseconds() function only returns an int64 value
 func fmtTimeMs(value time.Duration) float64 {
@@ -189,28 +195,32 @@ func getTCPHeaderFromICMPResponsePayload(data []byte) (*layers.TCP, error) {
 	return &tcp, nil
 }
 
-func recvPackets(handle *pcap.Handle, hops chan []net.IP) {
+func recvPackets(handle *pcap.Handle, hops chan net.IP, stringToSend string) {
 	packetStream := gopacket.NewPacketSource(handle, handle.LinkType())
-	var slice []net.IP
-	counter := 0
+	counter := beginTTLValue
+	var sentString string
+	sentString = stringToSend+strconv.Itoa(counter)
+
 	for packet := range packetStream.Packets() {
 		if packet == nil {
 			continue
 		}
 		ipLayer := packet.Layer(layers.LayerTypeIPv4)
-		// Don't need the tcpLayer for now but could be used for srcPort, dstPort, or any of the flags 
+		// Don't need the tcpLayer for now but could be used for srcPort, dstPort, or any of the flags
 		// tcpLayer := packet.Layer(layers.LayerTypeTCP)
 		icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
 
-		if ipLayer!= nil && icmpLayer != nil {
+		if ipLayer != nil && icmpLayer != nil {
 			ipl, _ := ipLayer.(*layers.IPv4)
 			//_, _ := tcpLayer.(*layers.TCP)
 			icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
 
 			if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
-				if (strings.Contains(string(icmpPkt.LayerPayload()), stringToSend)) {
+				if strings.Contains(string(icmpPkt.LayerPayload()), sentString) {
+					log.Println("REcved packet with: ", sentString)
 					counter += 1
-					slice = append(slice, ipl.SrcIP)
+					sentString = stringToSend+strconv.Itoa(counter)
+					hops <- ipl.SrcIP
 				}
 			}
 			_, err := getTCPHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
@@ -218,14 +228,51 @@ func recvPackets(handle *pcap.Handle, hops chan []net.IP) {
 				continue
 			}
 		}
-		if counter == (MaxTTLHops-beginTTLValue) {
-			break
-		}
 	}
-	hops <- slice
+
 }
 
-func funcTcpConn(clientIP string, clientPort string, netConn net.Conn) []net.IP{
+func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clPort int, sentString string, ttlValue int, sentChannel chan bool) {
+	rawBytes := []byte(sentString)
+
+	ipLayer := &layers.IPv4{
+		Protocol: layers.IPProtocolTCP,
+		Version:  4,
+		DstIP:    dstIP,
+	}
+	seqnum := uint32(11111+ttlValue)
+	tcpLayer := &layers.TCP{
+		SrcPort: layers.TCPPort(443),
+		DstPort: layers.TCPPort(clPort),
+		Seq:     seqnum, // increment it
+		// PSH:     true,
+		// ACK:     true,
+		SYN: true,
+	}
+	_ = tcpLayer.SetNetworkLayerForChecksum(ipLayer)	
+
+	// And create the packet with the layers
+	buffer = gopacket.NewSerializeBuffer()
+
+	gopacket.SerializeLayers(buffer, options,
+		ipLayer,
+		tcpLayer,
+		gopacket.Payload(rawBytes),
+	)
+	err := ipConn.SetTTL(int(ttlValue))
+	if err != nil {
+		log.Println("Error setting ttl")
+	}
+	outgoingPacket := buffer.Bytes()
+	if _, err := tcpConn.Write(outgoingPacket); err != nil {
+		log.Println("Error writing to connection: ", err)
+	}
+	log.Println("Sent ", ttlValue, " packet")
+	sentChannel <- true
+	return
+}
+
+func funcTcpConn(clientIP string, clientPort string, netConn net.Conn) map[int]net.IP {
 	handle, err := pcap.OpenLive(deviceName, 65536, true, time.Second)
 	if err != nil {
 		log.Println("Handle error:", err)
@@ -235,51 +282,24 @@ func funcTcpConn(clientIP string, clientPort string, netConn net.Conn) []net.IP{
 	if err = handle.SetBPFFilter(fmt.Sprintf("(tcp and port %d and host %s) or icmp", clPort, clientIP)); err != nil {
 		log.Fatal(err)
 	}
-	hops := make(chan []net.IP)
-	go recvPackets(handle, hops)
+	sentChannel := make(chan bool)
+	recvdHop := make(chan net.IP)
+	traceroute := make(map[int]net.IP)
 
 	tempConn := netConn.(*tls.Conn)
 	tcpConn := tempConn.NetConn()
 	dstIP := net.ParseIP(clientIP)
-	// Send raw bytes over wire
-	rawBytes := []byte(stringToSend)
+	ipConn := ipv4.NewConn(tcpConn)
+	go recvPackets(handle, recvdHop, stringToSend)
 
-	ipLayer := &layers.IPv4{
-		Protocol: layers.IPProtocolTCP,
-		Version:  4,
-		DstIP:    dstIP,
-	}
-
-	tcpLayer := &layers.TCP{
-		SrcPort: layers.TCPPort(443),
-		DstPort: layers.TCPPort(clPort),
-		Seq:     11111,
-		PSH:     true,
-		ACK:     true,
-		//SYN: true,
-	}
-	_ = tcpLayer.SetNetworkLayerForChecksum(ipLayer)
-
-	// And create the packet with the layers
-	buffer = gopacket.NewSerializeBuffer()
-	gopacket.SerializeLayers(buffer, options,
-		ipLayer,
-		tcpLayer,
-		gopacket.Payload(rawBytes),
-	)
 	for ttlValue := beginTTLValue; ttlValue <= MaxTTLHops; ttlValue++ {
-		ipConn := ipv4.NewConn(tcpConn)
-		err = ipConn.SetTTL(int(ttlValue))
-		if err != nil {
-			log.Println("Error setting ttl")
-		}
-		outgoingPacket := buffer.Bytes()
-		if _, err := tcpConn.Write(outgoingPacket); err != nil {
-			log.Println("Error writing to connection: ", err)
-		}
+		// Send raw bytes over wire
+		sentString := stringToSend+strconv.Itoa(ttlValue)
+		go sendTracePacket(tcpConn, ipConn, dstIP, clPort, sentString,  ttlValue, sentChannel)
+		<- sentChannel
+		traceroute[ttlValue] = <- recvdHop
 	}
-	slice := <- hops
-	return slice
+	return traceroute
 }
 
 func traceHandler(w http.ResponseWriter, r *http.Request) {
@@ -297,8 +317,8 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 	myConn := c.UnderlyingConn()
-	slice := funcTcpConn(clientIP, clientPort, myConn)
-	zeroTraceHops, _ := json.Marshal(slice)
+	traceroute := funcTcpConn(clientIP, clientPort, myConn)
+	zeroTraceHops, _ := json.Marshal(traceroute)
 	zeroTraceString := string(zeroTraceHops)
 	InfoLogger.Println("0trace hops: ", zeroTraceString)
 }
@@ -441,10 +461,11 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
 	debugPrintClientInfo(r, "ping")
 
-	adjIPstoPing, err := getAdjacentIPs(clientIP)
-	if err != nil {
-		log.Println("Error obtaining adjacent IPs: ", err)
-	}
+	// adjIPstoPing, err := getAdjacentIPs(clientIP)
+	// if err != nil {
+	// 	log.Println("Error obtaining adjacent IPs: ", err)
+	// }
+	adjIPstoPing := []string{}
 	ipTotal := len(adjIPstoPing)
 	offset := 0
 	numBatches := int(math.Ceil(float64(ipTotal / batchSizeLimit)))
@@ -483,16 +504,24 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Combine all results
+	// results := Results{
+	// 	UUID:   uuid.NewString(),
+	// 	IPaddr: clientIP,
+	// 	//RFC3339 style UTC date time with added seconds information
+	// 	Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+	// 	IcmpPing:    icmpResults,
+	// 	AvgIcmpStat: getMeanIcmpRTT(icmpResults),
+	// 	TcpPing:     tcpResultsObj,
+	// 	AvgTcpStat:  getMeanTcpRTT(tcpResultsObj),
+	// }
+
 	results := Results{
 		UUID:   uuid.NewString(),
 		IPaddr: clientIP,
 		//RFC3339 style UTC date time with added seconds information
-		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		IcmpPing:    icmpResults,
-		AvgIcmpStat: getMeanIcmpRTT(icmpResults),
-		TcpPing:     tcpResultsObj,
-		AvgTcpStat:  getMeanTcpRTT(tcpResultsObj),
+		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"),	
 	}
+
 	jsObj, err := json.Marshal(results)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
