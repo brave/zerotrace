@@ -89,7 +89,6 @@
           const socket = new WebSocket(webSocketAddr);
           const intervalId = setInterval(() => {
             socket.send("Keep alive");
-            console.log("staying alive");
           }, 2000);
 
           socket.onerror = function (err) {

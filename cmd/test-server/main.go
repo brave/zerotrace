@@ -139,18 +139,11 @@ func getAdjacentIPs(clientIP string) ([]string, error) {
 	return adjIPs, nil
 }
 
-func debugPrintClientInfo(r *http.Request, handlerName string) {
-	clientIPstr := r.RemoteAddr
-	clientIP, clientPort, _ := net.SplitHostPort(clientIPstr)
-	log.Println(handlerName, " HANDLER is : ", clientIP, " and port is: ", clientPort)
-}
-
 // Handler for the echo webserver that speaks WebSocket
 func echoHandler(w http.ResponseWriter, r *http.Request) {
 	if checkHTTPParams(w, r, "/echo") {
 		return
 	}
-	debugPrintClientInfo(r, "echo")
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		ErrLogger.Println("upgrade:", err)
@@ -215,15 +208,9 @@ func recvPackets(handle *pcap.Handle, serverIP string, hops chan net.IP, stringT
 			// tcp, _ := tcpLayer.(*layers.TCP)
 			icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
 			currHop := ipl.SrcIP.String()
-			// log.Println("Server IP: ", serverIP)
-			// log.Println("This packet IP: ", currHop)
-			// if currHop == serverIP {
-			// 	log.Println("Found packet, payload: ", string(tcp.LayerPayload()))
-			// }
 			if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
 				// Check if the ICMP time exceeded packet contains the original datagram's data (payload) or if it is a new hop (and not responses to retransmissions)
 				if strings.Contains(string(icmpPkt.LayerPayload()), sentString) || prevHop != currHop {
-					log.Println("REcved packet with: ", sentString)
 					counter += 1
 					sentString = stringToSend + strconv.Itoa(counter)
 					prevHop = currHop
@@ -314,7 +301,6 @@ func funcTcpConn(clientIP string, clientPort string, netConn net.Conn) map[int]n
 
 	for ttlValue := beginTTLValue; ttlValue <= MaxTTLHops; ttlValue++ {
 		sentString := stringToSend + strconv.Itoa(ttlValue)
-		log.Println("From loop: ", sentString)
 		sent := sendTracePacket(tcpConn, ipConn, dstIP, clPort, sentString, ttlValue)
 		if sent == false {
 			break
@@ -334,10 +320,8 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 			uuid = v[0]
 		}
 	}
-	log.Println("Found uuid: ", uuid)
 	clientIPstr := r.RemoteAddr
 	clientIP, clientPort, _ := net.SplitHostPort(clientIPstr)
-	debugPrintClientInfo(r, "trace")
 
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -489,7 +473,6 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
-	debugPrintClientInfo(r, "ping")
 
 	// adjIPstoPing, err := getAdjacentIPs(clientIP)
 	// if err != nil {
