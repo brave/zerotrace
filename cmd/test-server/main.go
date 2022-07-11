@@ -55,6 +55,11 @@ const stringToSend = "heeloo tcp"
 var PortsToTest = [...]int{53, 80, 443, 3389, 8080, 9100}
 var directoryPath string
 
+var seqNumHop = make(map[int][]uint32)
+
+var timeStart = make(map[int]time.Time)
+var hopRTT = make(map[int]time.Duration)
+
 // Use with default options
 var upgrader = websocket.Upgrader{}
 
@@ -108,8 +113,18 @@ type Results struct {
 }
 
 type TracerouteResults struct {
-	UUID        string
-	Hops		map[int]net.IP
+	UUID   string
+	Hops   map[int]net.IP
+	HopRTT map[int]time.Duration
+}
+
+func sliceContains(slice []uint32, value uint32) bool {
+	for _, v := range slice {
+		if v == value {
+			return true
+		}
+	}
+	return false
 }
 
 // Implementing this since Golang time.Milliseconds() function only returns an int64 value
@@ -188,43 +203,52 @@ func getTCPHeaderFromICMPResponsePayload(data []byte) (*layers.TCP, error) {
 	return &tcp, nil
 }
 
-func recvPackets(handle *pcap.Handle, serverIP string, clientIP string, hops chan net.IP, stringToSend string) {
+func recvPackets(handle *pcap.Handle, serverIP string, clientIP string, hops chan net.IP) {
 	packetStream := gopacket.NewPacketSource(handle, handle.LinkType())
 	counter := beginTTLValue
-	var sentString string
-	sentString = stringToSend + strconv.Itoa(counter)
-	var prevHop string
 	for packet := range packetStream.Packets() {
+		recvTime := time.Now()
 		if packet == nil {
 			continue
 		}
 		ipLayer := packet.Layer(layers.LayerTypeIPv4)
 		// Don't need the tcpLayer for now but could be used for srcPort, dstPort, or any of the flags
-		// tcpLayer := packet.Layer(layers.LayerTypeTCP)
+		tcpLayer := packet.Layer(layers.LayerTypeTCP)
 		icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
 
-		if ipLayer != nil && icmpLayer != nil {
+		if ipLayer != nil {
 			ipl, _ := ipLayer.(*layers.IPv4)
-			// tcp, _ := tcpLayer.(*layers.TCP)
-			icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
 			currHop := ipl.SrcIP.String()
-			if currHop == clientIP {
-				ErrLogger.Println("Traceroute reached Client IP at hop: ", counter)
-				hops <- ipl.SrcIP
-				return
-			}
-			if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
-				// Check if the ICMP time exceeded packet contains the original datagram's data (payload) or if it is a new hop (and not responses to retransmissions)
-				if strings.Contains(string(icmpPkt.LayerPayload()), sentString) || prevHop != currHop {
-					counter += 1
-					sentString = stringToSend + strconv.Itoa(counter)
-					prevHop = currHop
-					hops <- ipl.SrcIP
+			// the TCP packet that we just sent
+			if tcpLayer != nil {
+				tcp, _ := tcpLayer.(*layers.TCP)
+				packetTTL := int(ipl.TTL)
+				if currHop == serverIP {
+					seqNumHop[packetTTL] = append(seqNumHop[packetTTL], tcp.Seq)
 				}
 			}
-			_, err := getTCPHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
-			if err != nil {
-				continue
+			// or if it is an ICMP packet
+			if icmpLayer != nil {
+				icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
+				if currHop == clientIP {
+					ErrLogger.Println("Traceroute reached Client IP at hop: ", counter)
+					hops <- ipl.SrcIP
+					return
+				}
+				if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
+					tcpHeaderIcmp, err := getTCPHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
+					if err != nil {
+						continue
+					}
+					seq := tcpHeaderIcmp.Seq
+					// Check if the ICMP time exceeded packet contains the original datagram's data (payload) or if it is a new hop (and not responses to retransmissions)
+					if seqNumHop[counter] != nil && sliceContains(seqNumHop[counter], seq) {
+						ErrLogger.Println("Recvd packet: ", seq, " TTL: ", counter)
+						hopRTT[counter] = recvTime.Sub(timeStart[counter])
+						counter += 1
+						hops <- ipl.SrcIP
+					}
+				}
 			}
 		}
 		if counter > MaxTTLHops {
@@ -242,16 +266,13 @@ func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clPort i
 
 	ipLayer := &layers.IPv4{
 		Protocol: layers.IPProtocolTCP,
-		// Id:       uint16(ipid),
 		Version:  4,
 		SrcIP:    net.ParseIP(localSrcIP),
 		DstIP:    dstIP,
 	}
-	seqnum := uint32(11111 + ttlValue)
 	tcpLayer := &layers.TCP{
 		SrcPort: layers.TCPPort(int(localSrcPort)),
 		DstPort: layers.TCPPort(clPort),
-		Seq:     seqnum, // increment it, though this is not respected in the sent packet
 		PSH:     true,
 		ACK:     true,
 		// SYN: true,
@@ -278,6 +299,7 @@ func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clPort i
 		ErrLogger.Println("Error writing to connection: ", err)
 		return false
 	}
+	ErrLogger.Println("Sent ", ttlValue, " packet")
 	return true
 }
 
@@ -302,10 +324,10 @@ func funcTcpConn(clientIP string, clientPort string, netConn net.Conn) map[int]n
 	localSrcAddr := tcpConn.LocalAddr().String()
 	localSrcIP, _, _ := net.SplitHostPort(localSrcAddr)
 
-	go recvPackets(handle, localSrcIP, clientIP, recvdHop, stringToSend)
-
+	go recvPackets(handle, localSrcIP, clientIP, recvdHop)
 	for ttlValue := beginTTLValue; ttlValue <= MaxTTLHops; ttlValue++ {
 		sentString := stringToSend + strconv.Itoa(ttlValue)
+		timeStart[ttlValue] = time.Now()
 		sent := sendTracePacket(tcpConn, ipConn, dstIP, clPort, sentString, ttlValue)
 		if sent == false {
 			break
@@ -340,10 +362,10 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 	myConn := c.UnderlyingConn()
 	traceroute := funcTcpConn(clientIP, clientPort, myConn)
-	results := TracerouteResults{UUID: uuid, Hops: traceroute}
+	results := TracerouteResults{UUID: uuid, Hops: traceroute, HopRTT: hopRTT}
 	zeroTraceResult, _ := json.Marshal(results)
 	zeroTraceString := string(zeroTraceResult)
-	InfoLogger.Println(zeroTraceString)	
+	InfoLogger.Println(zeroTraceString)
 }
 
 func getTcpRttStats(arr []float64) (float64, float64, float64, float64) {
