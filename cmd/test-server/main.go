@@ -188,7 +188,7 @@ func getTCPHeaderFromICMPResponsePayload(data []byte) (*layers.TCP, error) {
 	return &tcp, nil
 }
 
-func recvPackets(handle *pcap.Handle, serverIP string, hops chan net.IP, stringToSend string) {
+func recvPackets(handle *pcap.Handle, serverIP string, clientIP string, hops chan net.IP, stringToSend string) {
 	packetStream := gopacket.NewPacketSource(handle, handle.LinkType())
 	counter := beginTTLValue
 	var sentString string
@@ -208,6 +208,11 @@ func recvPackets(handle *pcap.Handle, serverIP string, hops chan net.IP, stringT
 			// tcp, _ := tcpLayer.(*layers.TCP)
 			icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
 			currHop := ipl.SrcIP.String()
+			if currHop == clientIP {
+				ErrLogger.Println("Traceroute reached Client IP at hop: ", counter)
+				hops <- ipl.SrcIP
+				return
+			}
 			if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
 				// Check if the ICMP time exceeded packet contains the original datagram's data (payload) or if it is a new hop (and not responses to retransmissions)
 				if strings.Contains(string(icmpPkt.LayerPayload()), sentString) || prevHop != currHop {
@@ -297,7 +302,7 @@ func funcTcpConn(clientIP string, clientPort string, netConn net.Conn) map[int]n
 	localSrcAddr := tcpConn.LocalAddr().String()
 	localSrcIP, _, _ := net.SplitHostPort(localSrcAddr)
 
-	go recvPackets(handle, localSrcIP, recvdHop, stringToSend)
+	go recvPackets(handle, localSrcIP, clientIP, recvdHop, stringToSend)
 
 	for ttlValue := beginTTLValue; ttlValue <= MaxTTLHops; ttlValue++ {
 		sentString := stringToSend + strconv.Itoa(ttlValue)
@@ -305,7 +310,11 @@ func funcTcpConn(clientIP string, clientPort string, netConn net.Conn) map[int]n
 		if sent == false {
 			break
 		}
-		traceroute[ttlValue] = <-recvdHop
+		hop := <-recvdHop
+		traceroute[ttlValue] = hop
+		if hop.String() == clientIP {
+			break
+		}
 	}
 	return traceroute
 }
