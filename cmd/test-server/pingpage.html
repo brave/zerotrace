@@ -84,19 +84,24 @@
     function makeAnotherWs() {
           var ipaddress = {{ .IPaddr }};
           var uuid = {{ .UUID }};
+          const webSocketAddr = 'wss://test.reethika.info/trace?uuid={{ .UUID }}';
           // Create a Web Socket
-          const socket = new WebSocket('wss://test.reethika.info/trace');
+          const socket = new WebSocket(webSocketAddr);
+          const intervalId = setInterval(() => {
+            socket.send("Keep alive");
+            console.log("staying alive");
+          }, 2000);
+
           socket.onerror = function (err) {
             reject(err.toString());
           }
           socket.onopen = function () {
-            socket.send("Hllo");
           }
     }
 
 	   makeAnotherWs();
 
-      getLatencyWebSocket().then((latencies) => {
+     getLatencyWebSocket().then((latencies) => {
         document.getElementById('uuid').innerHTML = {{ .UUID }};
         document.getElementById('ip').innerHTML = {{ .IPaddr }};
         document.getElementById('values').innerHTML = latencies;
