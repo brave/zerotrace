@@ -55,8 +55,7 @@ const stringToSend = "heeloo tcp"
 var PortsToTest = [...]int{53, 80, 443, 3389, 8080, 9100}
 var directoryPath string
 
-var seqNumHop = make(map[int][]uint32)
-
+// FIXME: These should not be global variables in a multi-client setting
 var timeStart = make(map[int]time.Time)
 var hopRTT = make(map[int]time.Duration)
 
@@ -186,24 +185,29 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Parse TCP header from ICMP Response Payload
-func getTCPHeaderFromICMPResponsePayload(data []byte) (*layers.TCP, error) {
+// Parse IP and TCP headers from ICMP Response Payload
+func getHeadersFromICMPResponsePayload(data []byte) (*layers.IPv4, *layers.TCP, error) {
 	if len(data) < 1 {
-		return nil, errors.New("received invalid IP header")
+		return nil, nil, errors.New("received invalid IP header")
 	}
 	ipHeaderLength := int((data[0] & 0x0F) * 4)
 
 	if len(data) < ipHeaderLength {
-		return nil, errors.New("length of ICMP packet too short to decode IP")
+		return nil, nil, errors.New("length of ICMP packet too short to decode IP")
 	}
-
+	ip := layers.IPv4{}
 	tcp := layers.TCP{}
-
-	tcp.DecodeFromBytes(data[ipHeaderLength:], gopacket.NilDecodeFeedback)
-	return &tcp, nil
+	ipErr := ip.DecodeFromBytes(data[0:], gopacket.NilDecodeFeedback)
+	tcpErr := tcp.DecodeFromBytes(data[ipHeaderLength:], gopacket.NilDecodeFeedback)
+	if ipErr != nil && tcpErr != nil {
+		return nil, nil, ipErr
+	}
+	return &ip, &tcp, nil
 }
 
 func recvPackets(handle *pcap.Handle, serverIP string, clientIP string, hops chan net.IP) {
+	var seqNumHop = make(map[int][]uint32)
+	var ipIdHop = make(map[int][]uint32)
 	packetStream := gopacket.NewPacketSource(handle, handle.LinkType())
 	counter := beginTTLValue
 	for packet := range packetStream.Packets() {
@@ -224,7 +228,13 @@ func recvPackets(handle *pcap.Handle, serverIP string, clientIP string, hops cha
 				tcp, _ := tcpLayer.(*layers.TCP)
 				packetTTL := int(ipl.TTL)
 				if currHop == serverIP {
-					seqNumHop[packetTTL] = append(seqNumHop[packetTTL], tcp.Seq)
+					if sliceContains(ipIdHop[packetTTL], uint32(ipl.Id)) == false {
+						ipIdHop[packetTTL] = append(ipIdHop[packetTTL], uint32(ipl.Id))
+					}
+
+					if sliceContains(seqNumHop[packetTTL], tcp.Seq) == false {
+						seqNumHop[packetTTL] = append(seqNumHop[packetTTL], tcp.Seq)
+					}
 				}
 			}
 			// or if it is an ICMP packet
@@ -236,14 +246,20 @@ func recvPackets(handle *pcap.Handle, serverIP string, clientIP string, hops cha
 					return
 				}
 				if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
-					tcpHeaderIcmp, err := getTCPHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
+					ipHeaderIcmp, tcpHeaderIcmp, err := getHeadersFromICMPResponsePayload(icmpPkt.LayerPayload())
 					if err != nil {
+						ErrLogger.Println("Error getting header from ICMP packet: ", err)
 						continue
 					}
 					seq := tcpHeaderIcmp.Seq
-					// Check if the ICMP time exceeded packet contains the original datagram's data (payload) or if it is a new hop (and not responses to retransmissions)
+					ipid := uint32(ipHeaderIcmp.Id)
 					if seqNumHop[counter] != nil && sliceContains(seqNumHop[counter], seq) {
-						ErrLogger.Println("Recvd packet: ", seq, " TTL: ", counter)
+						log.Println("Received packet seq: ", seq, " TTL: ", counter)
+						hopRTT[counter] = recvTime.Sub(timeStart[counter])
+						counter += 1
+						hops <- ipl.SrcIP
+					} else if ipIdHop[counter] != nil && sliceContains(ipIdHop[counter], ipid) {
+						log.Println("Received packet ipid: ", ipid, " TTL: ", counter)
 						hopRTT[counter] = recvTime.Sub(timeStart[counter])
 						counter += 1
 						hops <- ipl.SrcIP
@@ -278,13 +294,8 @@ func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clPort i
 		// SYN: true,
 	}
 	_ = tcpLayer.SetNetworkLayerForChecksum(ipLayer)
-	ttlErr := ipConn.SetTTL(int(ttlValue))
-	if ttlErr != nil {
-		ErrLogger.Println("Error setting ttl: ", ttlErr)
-		return false
-	}
 	// And create the packet with the layers
-	buffer := gopacket.NewSerializeBuffer()
+	buffer = gopacket.NewSerializeBuffer()
 
 	serializeErr := gopacket.SerializeLayers(buffer, options,
 		tcpLayer,
@@ -294,12 +305,19 @@ func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clPort i
 		ErrLogger.Println("Serialize error: ", serializeErr)
 		return false
 	}
+
+	ttlErr := ipConn.SetTTL(int(ttlValue))
+	if ttlErr != nil {
+		ErrLogger.Println("Error setting ttl: ", ttlErr)
+		return false
+	}
+
 	outgoingPacket := buffer.Bytes()
 	if _, err := tcpConn.Write(outgoingPacket); err != nil {
 		ErrLogger.Println("Error writing to connection: ", err)
 		return false
 	}
-	ErrLogger.Println("Sent ", ttlValue, " packet")
+	log.Println("Sent ", ttlValue, " packet")
 	return true
 }
 
@@ -332,6 +350,7 @@ func funcTcpConn(clientIP string, clientPort string, netConn net.Conn) map[int]n
 		if sent == false {
 			break
 		}
+		time.Sleep(3 * time.Second)
 		hop := <-recvdHop
 		traceroute[ttlValue] = hop
 		if hop.String() == clientIP {
