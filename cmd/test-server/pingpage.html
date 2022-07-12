@@ -88,9 +88,14 @@
           const webSocketAddr = 'wss://test.reethika.info/trace?uuid={{ .UUID }}';
           // Create a Web Socket
           const socket = new WebSocket(webSocketAddr);
+          var startTime = new Date().getTime(); 
           const intervalId = setInterval(() => {
+            if(new Date().getTime() - startTime > 600000){
+              clearInterval(intervalId);
+              return;
+            }
             socket.send("Keep alive");
-          }, 2000);
+          }, 3000);
 
           socket.onerror = function (err) {
             reject(err.toString());

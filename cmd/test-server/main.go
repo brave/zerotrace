@@ -42,7 +42,7 @@ var options = gopacket.SerializeOptions{
 }
 
 const stringToSend = "heeloo tcp"
-const tracerouteHopTimeout = 2 * time.Minute
+const tracerouteHopTimeout = 30 * time.Second
 
 var directoryPath string
 var timerPerHopPerUUID = make(map[string]time.Time)
@@ -381,7 +381,7 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 		UUID:      uuid,
 		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
 		Hops:      traceroute,
-		HopRTT:    hopRTT
+		HopRTT:    hopRTT,
 	}
 	zeroTraceResult, _ := json.Marshal(results)
 	zeroTraceString := string(zeroTraceResult)
