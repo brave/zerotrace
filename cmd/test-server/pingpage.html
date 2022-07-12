@@ -67,9 +67,11 @@
                 latencies.push(roundToTwo(messages[i+1].ts - messages[i].ts));
               }
               if (statsSent == false) {
+              const datetimeutc = new Date().toISOString();
               socket.send(JSON.stringify({
                 UUID: uuid,
                 IP: ipaddress,
+                Timestamp: datetimeutc,
                 latencies: latencies,
               }));
               statsSent = true;

@@ -82,9 +82,10 @@ type Results struct {
 }
 
 type TracerouteResults struct {
-	UUID   string
-	Hops   map[int]net.IP
-	HopRTT map[int]time.Duration
+	UUID      string
+	Timestamp string
+	Hops      map[int]net.IP
+	HopRTT    map[int]time.Duration
 }
 
 // Check if a particular IP Id (uint16 in layers.IPv4) is in the slice of IP Id's we have sent with a particular TTL value
@@ -376,7 +377,12 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 	myConn := c.UnderlyingConn()
 	traceroute := start0trace(uuid, clientIP, clientPort, myConn)
-	results := TracerouteResults{UUID: uuid, Hops: traceroute, HopRTT: hopRTT}
+	results := TracerouteResults {
+		UUID:      uuid,
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+		Hops:      traceroute,
+		HopRTT:    hopRTT
+	}
 	zeroTraceResult, _ := json.Marshal(results)
 	zeroTraceString := string(zeroTraceResult)
 	InfoLogger.Println(zeroTraceString)
