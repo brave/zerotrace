@@ -228,10 +228,6 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 					if sliceContains(ipIdHop[packetTTL], ipl.Id) == false {
 						ipIdHop[packetTTL] = append(ipIdHop[packetTTL], ipl.Id)
 					}
-				} else if currHop == clientIP {
-					// possibly the response from the client IP
-					ErrLogger.Println("Traceroute reached client (TCP response) at hop: ", counter)
-					return
 				}
 			}
 			// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
