@@ -18,13 +18,11 @@ import (
 	"golang.org/x/net/ipv4"
 	"html/template"
 	"log"
-	"math"
 	"net"
 	"net/http"
 	"os"
 	"path"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -77,50 +75,25 @@ type Results struct {
 	AvgIcmpStat float64
 }
 
+type SentPacketData struct {
+	HopIPId     uint16
+	HopSentTime time.Time
+}
+
+type HopRTT struct {
+	IP  net.IP
+	RTT float64
+}
+
 type TracerouteResults struct {
 	UUID      string
 	Timestamp string
-	Hops      map[int]net.IP
-	HopRTT    map[int]time.Duration
-}
-
-// Check if a particular IP Id (uint16 in layers.IPv4) is in the slice of IP Id's we have sent with a particular TTL value
-func sliceContains(slice []uint16, value uint16) bool {
-	for _, v := range slice {
-		if v == value {
-			return true
-		}
-	}
-	return false
+	HopData   map[int]HopRTT
 }
 
 // Implementing this since Golang time.Milliseconds() function only returns an int64 value
 func fmtTimeMs(value time.Duration) float64 {
 	return (float64(value) / float64(time.Millisecond))
-}
-
-// Increment IPs to enumerate all IPs in a subnet // not used now
-func increment(ip net.IP) {
-	for j := len(ip) - 1; j >= 0; j-- {
-		ip[j]++
-		if ip[j] > 0 {
-			break
-		}
-	}
-}
-
-// Get all adjacent IPs to ping // not used now
-func getAdjacentIPs(clientIP string) ([]string, error) {
-	var requiredSubnet = clientIP + "/24"
-	var adjIPs []string
-	ip, ipnet, err := net.ParseCIDR(requiredSubnet)
-	if err != nil {
-		return []string{}, err
-	}
-	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); increment(ip) {
-		adjIPs = append(adjIPs, ip.String())
-	}
-	return adjIPs, nil
 }
 
 // Handler for the echo webserver that speaks WebSocket
@@ -191,18 +164,40 @@ func hasTracerouteHopTimedout(timeToCheck time.Time) bool {
 	return false
 }
 
+// Check if a particular IP Id (uint16 in layers.IPv4) is in the slice of IP Id's we have sent with a particular TTL value
+func sliceContains(slice []SentPacketData, value uint16) bool {
+	for _, v := range slice {
+		if v.HopIPId == value {
+			return true
+		}
+	}
+	return false
+}
+
+func getSentTimestampfromIPId(sentDataSlice []SentPacketData, ipid uint16) (time.Time, error) {
+	for _, v := range sentDataSlice {
+		if v.HopIPId == ipid {
+			return v.HopSentTime, nil
+		}
+	}
+	return time.Now(), errors.New("IP Id not in sent packets")
+}
+
 // Listen on the provided pcap handler for packets sent
-func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP string, hops chan net.IP) {
-	var ipIdHop = make(map[int][]uint16)
+func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP string, hops chan HopRTT) {
+	var ipIdHop = make(map[int][]SentPacketData)
 	packetStream := gopacket.NewPacketSource(handle, handle.LinkType())
 	counter := beginTTLValue
 	timerPerHopPerUUID[uuid] = time.Now()
+	var hopRTTVal time.Duration
 	for packet := range packetStream.Packets() {
 		// if a particular hop is taking too long, then return nil and move on to sending packets to find the next hop
 		if hasTracerouteHopTimedout(timerPerHopPerUUID[uuid]) {
 			counter += 1
 			timerPerHopPerUUID[uuid] = resetTimerForCounter()
-			hops <- nil
+			// Must produce and return a <nil> value otherwise empty structs containing net.IP cannot be compared
+			var empty net.IP
+			hops <- HopRTT{empty, 0}
 		}
 		if packet == nil {
 			continue
@@ -221,31 +216,48 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 					// in case of retransmissions we might see the same sequence number sent when the TTL was set to different values
 					// but IP Id will remain unique per packet and can be used to correlate received packets
 					// (RFC 1812 says _at least_ IP header must be returned along with the packet)
-					if sliceContains(ipIdHop[packetTTL], ipl.Id) == false {
-						ipIdHop[packetTTL] = append(ipIdHop[packetTTL], ipl.Id)
+					sentTime := packet.Metadata().Timestamp
+					currIPId := ipl.Id
+					if sliceContains(ipIdHop[packetTTL], currIPId) == false {
+						ipIdHop[packetTTL] = append(ipIdHop[packetTTL], SentPacketData{HopIPId: currIPId, HopSentTime: sentTime})
 					}
 				}
 			}
 			// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
 			if icmpLayer != nil {
 				icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
+				ipHeaderIcmp, _, err := getHeadersFromICMPResponsePayload(icmpPkt.LayerPayload())
+				if err != nil {
+					// ErrLogger.Println("Error getting header from ICMP packet: ", err)
+					continue
+				}
+				ipid := ipHeaderIcmp.Id
+				recvTimestamp := packet.Metadata().Timestamp
 				if currHop == clientIP {
+					sentTime, err := getSentTimestampfromIPId(ipIdHop[counter], ipid)
+					if err != nil {
+						ErrLogger.Println(err)
+						hopRTTVal = 0
+					} else {
+						hopRTTVal = recvTimestamp.Sub(sentTime)
+					}
 					ErrLogger.Println("Traceroute reached client (ICMP response) at hop: ", counter)
-					hops <- ipl.SrcIP
+					hops <- HopRTT{IP: ipl.SrcIP, RTT: fmtTimeMs(hopRTTVal)}
 					return
 				}
 				if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
-					ipHeaderIcmp, _, err := getHeadersFromICMPResponsePayload(icmpPkt.LayerPayload())
-					if err != nil {
-						// ErrLogger.Println("Error getting header from ICMP packet: ", err)
-						continue
-					}
-					ipid := ipHeaderIcmp.Id
 					if ipIdHop[counter] != nil && sliceContains(ipIdHop[counter], ipid) {
 						ErrLogger.Println("Received packet ipid: ", ipid, " TTL: ", counter)
+						sentTime, err := getSentTimestampfromIPId(ipIdHop[counter], ipid)
+						if err != nil {
+							ErrLogger.Println("Bad Error: ", err) // this should not happen because we are making the same checks
+							hopRTTVal = 0
+						} else {
+							hopRTTVal = recvTimestamp.Sub(sentTime)
+						}
 						counter += 1
 						timerPerHopPerUUID[uuid] = resetTimerForCounter()
-						hops <- ipl.SrcIP
+						hops <- HopRTT{IP: ipl.SrcIP, RTT: fmtTimeMs(hopRTTVal)}
 					}
 				}
 			}
@@ -305,7 +317,7 @@ func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clPort i
 }
 
 // Reach the underlying connection and set up necessary handler and initalize 0trace set up
-func start0trace(uuid string, clientIP string, clientPort string, netConn net.Conn) map[int]net.IP {
+func start0trace(uuid string, clientIP string, clientPort string, netConn net.Conn) map[int]HopRTT {
 	handle, err := pcap.OpenLive(deviceName, 65536, true, time.Second)
 	if err != nil {
 		ErrLogger.Println("Handle error:", err)
@@ -315,8 +327,8 @@ func start0trace(uuid string, clientIP string, clientPort string, netConn net.Co
 	if err = handle.SetBPFFilter(fmt.Sprintf("(tcp and port %d and host %s) or icmp", clPort, clientIP)); err != nil {
 		log.Fatal(err)
 	}
-	recvdHop := make(chan net.IP)
-	traceroute := make(map[int]net.IP)
+	recvdHop := make(chan HopRTT)
+	traceroute := make(map[int]HopRTT)
 
 	tempConn := netConn.(*tls.Conn)
 	tcpConn := tempConn.NetConn()
@@ -336,12 +348,12 @@ func start0trace(uuid string, clientIP string, clientPort string, netConn net.Co
 		if sent == false {
 			break
 		}
-		hop := <-recvdHop
-		if hop == nil {
+		hopData := <-recvdHop
+		traceroute[ttlValue] = hopData
+		if hopData.IP == nil {
 			ErrLogger.Println("Moving on to the next hop")
 		}
-		traceroute[ttlValue] = hop
-		if hop.String() == clientIP {
+		if hopData.IP.String() == clientIP {
 			break
 		}
 	}
@@ -370,10 +382,10 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 	myConn := c.UnderlyingConn()
 	traceroute := start0trace(uuid, clientIP, clientPort, myConn)
-	results := TracerouteResults {
+	results := TracerouteResults{
 		UUID:      uuid,
 		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		Hops:      traceroute,
+		HopData:   traceroute,
 	}
 	zeroTraceResult, _ := json.Marshal(results)
 	zeroTraceString := string(zeroTraceResult)
@@ -438,36 +450,9 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
 
-	ipsToPing := []string{clientIP}
-	ipTotal := len(ipsToPing)
-	offset := 0
-	numBatches := int(math.Ceil(float64(ipTotal / batchSizeLimit)))
-
 	// Concurrently send ICMP pings for a <batchSizeLimit> number of IPs
 	var icmpResults []RtItem
-
-	for i := 0; i <= numBatches; i++ {
-		lower := offset
-		upper := offset + batchSizeLimit
-
-		if upper > ipTotal {
-			upper = ipTotal
-		}
-		batchIPs := ipsToPing[lower:upper]
-		offset += batchSizeLimit
-
-		var icmpWaitGroup sync.WaitGroup
-
-		icmpWaitGroup.Add(len(batchIPs))
-
-		for id := range batchIPs {
-			go func(IP string, id int) {
-				defer icmpWaitGroup.Done()
-				icmpResults = append(icmpResults, IcmpPinger(IP))
-			}(batchIPs[id], id)
-		}
-		icmpWaitGroup.Wait()
-	}
+	icmpResults = append(icmpResults, IcmpPinger(clientIP))
 
 	// Combine all results
 	results := Results{
