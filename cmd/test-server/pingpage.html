@@ -13,13 +13,12 @@
   </head>
 
   <body>
-    <h2>Calculate Latency Using WebSockets and Measure ICMP and TCP latency</h2>
+    <h2>Calculate Latency Using WebSockets and Measure ICMP latency</h2>
     <p>Experiment UUID: &ensp;</p><p id="uuid"></p><br>
     <p>Your IP: &ensp;</p><p id="ip"></p> <br>
     <p>All WebSocket measurements: &ensp;</p><p id="values"></p> <br>
     <p>Median WS latency: &ensp;</p><p id="data"></p> <br>
     <p>ICMP ping statistics: We conducted measaurements to all IPs adjacent to your IP (i.e. same /24 subnet), Average RTT: &ensp;</p> <p id="icmp"></p> <br>
-    <p>TCP ping statistics: we conducted TCP (SYN) measurements to six ports for all IPs adjacent to your IP (same /24 subnet), Average RTT: &ensp;</p><p id="tcp"></p> <br>
       <script>
      function median(values){
             if (values.length ===0) return 0;
@@ -106,7 +105,6 @@
         document.getElementById('values').innerHTML = latencies;
         document.getElementById('data').innerHTML = median(latencies);
         document.getElementById('icmp').innerHTML = {{ .AvgIcmpStat }};
-        document.getElementById('tcp').innerHTML = {{ .AvgTcpStat }};
       });
     </script>
   </body>
