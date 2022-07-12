@@ -47,10 +47,6 @@ const tracerouteHopTimeout = 30 * time.Second
 var directoryPath string
 var timerPerHopPerUUID = make(map[string]time.Time)
 
-// FIXME: These should not be global variables in a multi-client setting
-var timeStart = make(map[int]time.Time)
-var hopRTT = make(map[int]time.Duration)
-
 // Use with default options
 var upgrader = websocket.Upgrader{}
 
@@ -208,7 +204,6 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 			timerPerHopPerUUID[uuid] = resetTimerForCounter()
 			hops <- nil
 		}
-		recvTime := time.Now()
 		if packet == nil {
 			continue
 		}
@@ -248,7 +243,6 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 					ipid := ipHeaderIcmp.Id
 					if ipIdHop[counter] != nil && sliceContains(ipIdHop[counter], ipid) {
 						ErrLogger.Println("Received packet ipid: ", ipid, " TTL: ", counter)
-						hopRTT[counter] = recvTime.Sub(timeStart[counter])
 						counter += 1
 						timerPerHopPerUUID[uuid] = resetTimerForCounter()
 						hops <- ipl.SrcIP
@@ -338,7 +332,6 @@ func start0trace(uuid string, clientIP string, clientPort string, netConn net.Co
 	// Stop sending any more probes if connection errors out
 	for ttlValue := beginTTLValue; ttlValue <= MaxTTLHops; ttlValue++ {
 		sentString := stringToSend + strconv.Itoa(ttlValue)
-		timeStart[ttlValue] = time.Now()
 		sent := sendTracePacket(tcpConn, ipConn, dstIP, clPort, sentString, ttlValue)
 		if sent == false {
 			break
@@ -381,7 +374,6 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 		UUID:      uuid,
 		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
 		Hops:      traceroute,
-		HopRTT:    hopRTT,
 	}
 	zeroTraceResult, _ := json.Marshal(results)
 	zeroTraceString := string(zeroTraceResult)
