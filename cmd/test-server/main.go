@@ -258,7 +258,7 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 }
 
 // Send the TTL limited probe
-func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clPort int, sentString string, ttlValue int) bool {
+func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clientPort int, sentString string, ttlValue int) bool {
 	rawBytes := []byte(sentString)
 	localSrcAddr := tcpConn.LocalAddr().String()
 	localSrcIP, localSrcPortString, _ := net.SplitHostPort(localSrcAddr)
@@ -272,7 +272,7 @@ func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clPort i
 	}
 	tcpLayer := &layers.TCP{
 		SrcPort: layers.TCPPort(int(localSrcPort)),
-		DstPort: layers.TCPPort(clPort),
+		DstPort: layers.TCPPort(clientPort),
 		PSH:     true,
 		ACK:     true,
 	}
@@ -306,14 +306,17 @@ func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clPort i
 }
 
 // Reach the underlying connection and set up necessary handler and initalize 0trace set up
-func start0trace(uuid string, clientIP string, clientPort string, netConn net.Conn) map[int]HopRTT {
+func start0trace(uuid string, netConn net.Conn) map[int]HopRTT {
+	clientIPstr := netConn.RemoteAddr().String()
+	clientIP, clPort, _ := net.SplitHostPort(clientIPstr)
+	clientPort, _ := strconv.Atoi(clPort)
+
 	handle, err := pcap.OpenLive(deviceName, snaplen, promisc, time.Second)
 	if err != nil {
 		ErrLogger.Println("Handle error:", err)
 	}
-	clPort, _ := strconv.Atoi(clientPort)
 
-	if err = handle.SetBPFFilter(fmt.Sprintf("(tcp and port %d and host %s) or icmp", clPort, clientIP)); err != nil {
+	if err = handle.SetBPFFilter(fmt.Sprintf("(tcp and port %d and host %s) or icmp", clientPort, clientIP)); err != nil {
 		log.Fatal(err)
 	}
 	recvdHop := make(chan HopRTT)
@@ -333,7 +336,7 @@ func start0trace(uuid string, clientIP string, clientPort string, netConn net.Co
 	// Stop sending any more probes if connection errors out
 	for ttlValue := beginTTLValue; ttlValue <= MaxTTLHops; ttlValue++ {
 		sentString := stringToSend + strconv.Itoa(ttlValue)
-		sent := sendTracePacket(tcpConn, ipConn, dstIP, clPort, sentString, ttlValue)
+		sent := sendTracePacket(tcpConn, ipConn, dstIP, clientPort, sentString, ttlValue)
 		if sent == false {
 			break
 		}
@@ -361,8 +364,6 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 			uuid = v[0]
 		}
 	}
-	clientIPstr := r.RemoteAddr
-	clientIP, clientPort, _ := net.SplitHostPort(clientIPstr)
 
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -371,7 +372,7 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 	myConn := c.UnderlyingConn()
-	traceroute := start0trace(uuid, clientIP, clientPort, myConn)
+	traceroute := start0trace(uuid, myConn)
 	results := TracerouteResults{
 		UUID:      uuid,
 		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
