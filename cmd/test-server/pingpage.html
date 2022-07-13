@@ -81,7 +81,8 @@
           }
         });
         }
-
+    const keepAlivePktInterval = 1000;
+    const keepAliveTimePeriodms = 600000;
     function makeAnotherWs() {
           var ipaddress = {{ .IPaddr }};
           var uuid = {{ .UUID }};
@@ -90,12 +91,12 @@
           const socket = new WebSocket(webSocketAddr);
           var startTime = new Date().getTime(); 
           const intervalId = setInterval(() => {
-            if(new Date().getTime() - startTime > 600000){
+            if(new Date().getTime() - startTime > keepAliveTimePeriodms){
               clearInterval(intervalId);
               return;
             }
             socket.send("Keep alive");
-          }, 1000);
+          }, keepAlivePktInterval);
 
           socket.onerror = function (err) {
             reject(err.toString());

@@ -27,13 +27,15 @@ import (
 )
 
 const (
-	ICMPCount                = 5
-	ICMPTimeout              = time.Second * 10
-	batchSizeLimit       int = 100
-	beginTTLValue            = 5
-	MaxTTLHops               = 32
-	stringToSend             = "test string tcp"
-	tracerouteHopTimeout     = time.Second * 10
+	ICMPCount            = 5
+	ICMPTimeout          = time.Second * 10
+	batchSizeLimit       = 100
+	beginTTLValue        = 5
+	MaxTTLHops           = 32
+	stringToSend         = "test string tcp"
+	tracerouteHopTimeout = time.Second * 10
+	snaplen              = 65536
+	promisc              = true
 )
 
 var (
@@ -305,7 +307,7 @@ func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clPort i
 
 // Reach the underlying connection and set up necessary handler and initalize 0trace set up
 func start0trace(uuid string, clientIP string, clientPort string, netConn net.Conn) map[int]HopRTT {
-	handle, err := pcap.OpenLive(deviceName, 65536, true, time.Second)
+	handle, err := pcap.OpenLive(deviceName, snaplen, promisc, time.Second)
 	if err != nil {
 		ErrLogger.Println("Handle error:", err)
 	}
@@ -339,6 +341,7 @@ func start0trace(uuid string, clientIP string, clientPort string, netConn net.Co
 		traceroute[ttlValue] = hopData
 		if hopData.IP == nil {
 			ErrLogger.Println("Moving on to the next hop")
+			continue
 		}
 		if hopData.IP.String() == clientIP {
 			break
