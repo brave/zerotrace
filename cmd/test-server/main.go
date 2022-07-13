@@ -26,35 +26,29 @@ import (
 	"time"
 )
 
-const ICMPCount = 5
-const ICMPTimeout = time.Second * 10
-
-const batchSizeLimit int = 100
-const beginTTLValue = 5
-const MaxTTLHops = 32
-
-var buffer gopacket.SerializeBuffer
-var options = gopacket.SerializeOptions{
-	ComputeChecksums: true,
-	FixLengths:       true,
-}
-
-const stringToSend = "heeloo tcp"
-const tracerouteHopTimeout = time.Second * 10
-
-var directoryPath string
-var timerPerHopPerUUID = make(map[string]time.Time)
-
-// Use with default options
-var upgrader = websocket.Upgrader{}
+const (
+	ICMPCount                = 5
+	ICMPTimeout              = time.Second * 10
+	batchSizeLimit       int = 100
+	beginTTLValue            = 5
+	MaxTTLHops               = 32
+	stringToSend             = "test string tcp"
+	tracerouteHopTimeout     = time.Second * 10
+)
 
 var (
-	InfoLogger *log.Logger
+	buffer  gopacket.SerializeBuffer
+	options = gopacket.SerializeOptions{
+		ComputeChecksums: true,
+		FixLengths:       true,
+	}
+	directoryPath      string
+	timerPerHopPerUUID = make(map[string]time.Time)
+	upgrader           = websocket.Upgrader{}
+	InfoLogger         *log.Logger
+	ErrLogger          *log.Logger
+	deviceName         string
 )
-var (
-	ErrLogger *log.Logger
-)
-var deviceName string
 
 type RtItem struct {
 	IP        string
@@ -129,19 +123,19 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Parse IP and TCP headers from ICMP Response Payload
-func getHeadersFromICMPResponsePayload(data []byte) (*layers.IPv4, *layers.TCP, error) {
-	if len(data) < 1 {
+func getHeadersFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, *layers.TCP, error) {
+	if len(icmpPkt) < 1 {
 		return nil, nil, errors.New("Invalid IP header")
 	}
-	ipHeaderLength := int((data[0] & 0x0F) * 4)
+	ipHeaderLength := int((icmpPkt[0] & 0x0F) * 4)
 
-	if len(data) < ipHeaderLength {
+	if len(icmpPkt) < ipHeaderLength {
 		return nil, nil, errors.New("Length of received ICMP packet too short to decode IP")
 	}
 	ip := layers.IPv4{}
 	tcp := layers.TCP{}
-	ipErr := ip.DecodeFromBytes(data[0:], gopacket.NilDecodeFeedback)
-	tcpErr := tcp.DecodeFromBytes(data[ipHeaderLength:], gopacket.NilDecodeFeedback)
+	ipErr := ip.DecodeFromBytes(icmpPkt[0:], gopacket.NilDecodeFeedback)
+	tcpErr := tcp.DecodeFromBytes(icmpPkt[ipHeaderLength:], gopacket.NilDecodeFeedback)
 
 	if ipErr != nil && tcpErr != nil {
 		return nil, nil, ipErr
@@ -228,7 +222,6 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 				icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
 				ipHeaderIcmp, _, err := getHeadersFromICMPResponsePayload(icmpPkt.LayerPayload())
 				if err != nil {
-					// ErrLogger.Println("Error getting header from ICMP packet: ", err)
 					continue
 				}
 				ipid := ipHeaderIcmp.Id
