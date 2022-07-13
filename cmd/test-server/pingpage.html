@@ -95,7 +95,7 @@
               return;
             }
             socket.send("Keep alive");
-          }, 3000);
+          }, 1000);
 
           socket.onerror = function (err) {
             reject(err.toString());

@@ -40,7 +40,7 @@ var options = gopacket.SerializeOptions{
 }
 
 const stringToSend = "heeloo tcp"
-const tracerouteHopTimeout = 30 * time.Second
+const tracerouteHopTimeout = time.Second * 10
 
 var directoryPath string
 var timerPerHopPerUUID = make(map[string]time.Time)
