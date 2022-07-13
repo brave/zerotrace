@@ -144,16 +144,12 @@ func getHeaderFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, error) {
 
 // Returns current time, used to reset counter timer
 func resetTimerForCounter() time.Time {
-	return time.Now()
+	return time.Now().UTC()
 }
 
 // Check if tracerouteHopTimeout has been reached since the timeToCheck was set
 func hasTracerouteHopTimedout(timeToCheck time.Time) bool {
-	timenow := time.Now()
-	if timenow.Sub(timeToCheck) >= tracerouteHopTimeout {
-		return true
-	}
-	return false
+	return time.Now().UTC().Sub(timeToCheck) >= tracerouteHopTimeout
 }
 
 // Check if a particular IP Id (uint16 in layers.IPv4) is in the slice of IP Id's we have sent with a particular TTL value
@@ -172,7 +168,7 @@ func getSentTimestampfromIPId(sentDataSlice []SentPacketData, ipid uint16) (time
 			return v.HopSentTime, nil
 		}
 	}
-	return time.Now(), errors.New("IP Id not in sent packets")
+	return time.Now().UTC(), errors.New("IP Id not in sent packets")
 }
 
 // Listen on the provided pcap handler for packets sent
@@ -180,7 +176,7 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 	var ipIdHop = make(map[int][]SentPacketData)
 	packetStream := gopacket.NewPacketSource(handle, handle.LinkType())
 	counter := beginTTLValue
-	timerPerHopPerUUID[uuid] = time.Now()
+	timerPerHopPerUUID[uuid] = time.Now().UTC()
 	var hopRTTVal time.Duration
 	for packet := range packetStream.Packets() {
 		// if a particular hop is taking too long, then return nil and move on to sending packets to find the next hop
