@@ -122,26 +122,24 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Parse IP and TCP headers from ICMP Response Payload
-func getHeadersFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, *layers.TCP, error) {
+// Parse IP headers from ICMP Response Payload
+func getHeaderFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, error) {
 	if len(icmpPkt) < 1 {
-		return nil, nil, errors.New("Invalid IP header")
+		return nil, errors.New("Invalid IP header")
 	}
 	ipHeaderLength := int((icmpPkt[0] & 0x0F) * 4)
 
 	if len(icmpPkt) < ipHeaderLength {
-		return nil, nil, errors.New("Length of received ICMP packet too short to decode IP")
+		return nil, errors.New("Length of received ICMP packet too short to decode IP")
 	}
 	ip := layers.IPv4{}
-	tcp := layers.TCP{}
 	ipErr := ip.DecodeFromBytes(icmpPkt[0:], gopacket.NilDecodeFeedback)
-	tcpErr := tcp.DecodeFromBytes(icmpPkt[ipHeaderLength:], gopacket.NilDecodeFeedback)
 
-	if ipErr != nil && tcpErr != nil {
-		return nil, nil, ipErr
+	if ipErr != nil {
+		return nil, ipErr
 	}
 
-	return &ip, &tcp, nil
+	return &ip, nil
 }
 
 // Returns current time, used to reset counter timer
@@ -220,7 +218,7 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 			// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
 			if icmpLayer != nil {
 				icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
-				ipHeaderIcmp, _, err := getHeadersFromICMPResponsePayload(icmpPkt.LayerPayload())
+				ipHeaderIcmp, err := getHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
 				if err != nil {
 					continue
 				}
