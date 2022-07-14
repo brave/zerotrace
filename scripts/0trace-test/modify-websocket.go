@@ -14,8 +14,6 @@ import (
 	"time"
 )
 
-var addr = flag.String("addr", ":80", "http service address")
-
 var buffer gopacket.SerializeBuffer
 var options gopacket.SerializeOptions
 
@@ -103,6 +101,7 @@ func home(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	flag.StringVar(&addr, "addr", ":80", "http service address")
 	flag.Parse()
 	log.SetFlags(0)
 	http.HandleFunc("/echo", echo)
