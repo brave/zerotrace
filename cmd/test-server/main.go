@@ -88,6 +88,12 @@ type TracerouteResults struct {
 	HopData   map[int]HopRTT
 }
 
+// Check if UUID is valid
+func isValidUUID(u string) bool {
+	_, err := uuid.Parse(u)
+	return err == nil
+}
+
 // Implementing this since Golang time.Milliseconds() function only returns an int64 value
 func fmtTimeMs(value time.Duration) float64 {
 	return (float64(value) / float64(time.Millisecond))
@@ -114,8 +120,12 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 		var wsData map[string]interface{}
 		json.Unmarshal(message, &wsData)
 		if wsData["type"] != "ws-latency" {
-			// Only log the final message with all latencies calculated
-			InfoLogger.Println(string(message))
+			if wsUUID, ok := wsData["UUID"].(string); ok {
+				// Only log the final message with all latencies calculated, and don't log other unsolicited echo messages
+				if isValidUUID(string(wsUUID)) {
+					InfoLogger.Println(string(message))
+				}
+			}
 		}
 		err = c.WriteMessage(mt, message)
 		if err != nil {
@@ -372,7 +382,7 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 		HopData:   traceroute,
 	}
 	zeroTraceResult, err := json.Marshal(results)
-	if err!= nil {
+	if err != nil {
 		ErrLogger.Println("Error logging 0trace results: ", err)
 		InfoLogger.Println(results) // Dump results in non-JSON format
 	}
@@ -471,6 +481,10 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, path)
 }
 
+func redirectToTLS(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
+}
+
 func main() {
 	var logfilePath string
 	var errlogPath string
@@ -497,5 +511,10 @@ func main() {
 	http.HandleFunc("/ping", pingHandler)
 	http.HandleFunc("/echo", echoHandler)
 	http.HandleFunc("/trace", traceHandler)
+	go func() {
+		if err := http.ListenAndServe(":80", http.HandlerFunc(redirectToTLS)); err != nil {
+			log.Fatalf("ListenAndServe port 80 error: %v", err)
+		}
+	}()
 	http.ListenAndServeTLS(":443", fullChain, privKey, nil)
 }
