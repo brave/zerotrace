@@ -50,6 +50,7 @@ var (
 	InfoLogger         *log.Logger
 	ErrLogger          *log.Logger
 	deviceName         string
+	currTTLIndicator   = make(map[string]int)
 )
 
 type RtItem struct {
@@ -177,18 +178,12 @@ func getSentTimestampfromIPId(sentDataSlice []SentPacketData, ipid uint16) (time
 func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP string, hops chan HopRTT) {
 	var ipIdHop = make(map[int][]SentPacketData)
 	packetStream := gopacket.NewPacketSource(handle, handle.LinkType())
-	counter := beginTTLValue
+	var counter int
 	timerPerHopPerUUID[uuid] = time.Now().UTC()
 	var hopRTTVal time.Duration
+
 	for packet := range packetStream.Packets() {
-		// if a particular hop is taking too long, then return nil and move on to sending packets to find the next hop
-		if hasTracerouteHopTimedout(timerPerHopPerUUID[uuid]) {
-			counter += 1
-			timerPerHopPerUUID[uuid] = resetTimerForCounter()
-			// Must produce and return a <nil> value otherwise empty structs containing net.IP cannot be compared
-			var empty net.IP
-			hops <- HopRTT{empty, 0}
-		}
+		currTTL := currTTLIndicator[uuid]
 		if packet == nil {
 			continue
 		}
@@ -213,8 +208,9 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 					}
 				}
 			}
+
 			// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
-			if icmpLayer != nil {
+			if icmpLayer != nil && counter != currTTL {
 				icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
 				ipHeaderIcmp, err := getHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
 				if err != nil {
@@ -223,29 +219,29 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 				ipid := ipHeaderIcmp.Id
 				recvTimestamp := packet.Metadata().Timestamp
 				if currHop == clientIP {
-					sentTime, err := getSentTimestampfromIPId(ipIdHop[counter], ipid)
+					sentTime, err := getSentTimestampfromIPId(ipIdHop[currTTL], ipid)
 					if err != nil {
 						ErrLogger.Println(err)
 						hopRTTVal = 0
 					} else {
 						hopRTTVal = recvTimestamp.Sub(sentTime)
 					}
-					ErrLogger.Println("Traceroute reached client (ICMP response) at hop: ", counter)
+					ErrLogger.Println("Traceroute reached client (ICMP response) at hop: ", currTTL)
+					counter = currTTL // ensure skipped ttls are fine
 					hops <- HopRTT{IP: ipl.SrcIP, RTT: fmtTimeMs(hopRTTVal)}
 					return
 				}
 				if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
-					if ipIdHop[counter] != nil && sliceContains(ipIdHop[counter], ipid) {
-						ErrLogger.Println("Received packet ipid: ", ipid, " TTL: ", counter)
-						sentTime, err := getSentTimestampfromIPId(ipIdHop[counter], ipid)
+					if ipIdHop[currTTL] != nil && sliceContains(ipIdHop[currTTL], ipid) {
+						ErrLogger.Println("Received packet ipid: ", ipid, " TTL: ", currTTL)
+						sentTime, err := getSentTimestampfromIPId(ipIdHop[currTTL], ipid)
 						if err != nil {
 							ErrLogger.Println("Bad Error: ", err) // this should not happen because we are making the same checks
 							hopRTTVal = 0
 						} else {
 							hopRTTVal = recvTimestamp.Sub(sentTime)
 						}
-						counter += 1
-						timerPerHopPerUUID[uuid] = resetTimerForCounter()
+						counter = currTTL // ensure skipped ttls are fine
 						hops <- HopRTT{IP: ipl.SrcIP, RTT: fmtTimeMs(hopRTTVal)}
 					}
 				}
@@ -337,18 +333,25 @@ func start0trace(uuid string, netConn net.Conn) map[int]HopRTT {
 	for ttlValue := beginTTLValue; ttlValue <= MaxTTLHops; ttlValue++ {
 		sentString := stringToSend + strconv.Itoa(ttlValue)
 		sent := sendTracePacket(tcpConn, ipConn, dstIP, clientPort, sentString, ttlValue)
+		currTTLIndicator[uuid] = ttlValue
 		if sent == false {
 			break
 		}
-		hopData := <-recvdHop
-		traceroute[ttlValue] = hopData
-		if hopData.IP == nil {
-			ErrLogger.Println("Moving on to the next hop")
+		ticker := time.NewTicker(tracerouteHopTimeout)
+		defer ticker.Stop()
+		select {
+		case hopData := <-recvdHop:
+			traceroute[ttlValue] = hopData
+			if hopData.IP.String() == clientIP {
+				break
+			}
+		case <-ticker.C:
+			ErrLogger.Println("Traceroute Hop Timeout at Hop ", ttlValue, ". Moving on to the next hop.")
+			var empty net.IP
+			traceroute[ttlValue] = HopRTT{empty, 0}
 			continue
 		}
-		if hopData.IP.String() == clientIP {
-			break
-		}
+
 	}
 	return traceroute
 }
