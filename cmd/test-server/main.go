@@ -145,16 +145,6 @@ func getHeaderFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, error) {
 	return &ip, nil
 }
 
-// Returns current time, used to reset counter timer
-func resetTimerForCounter() time.Time {
-	return time.Now().UTC()
-}
-
-// Check if tracerouteHopTimeout has been reached since the timeToCheck was set
-func hasTracerouteHopTimedout(timeToCheck time.Time) bool {
-	return time.Now().UTC().Sub(timeToCheck) >= tracerouteHopTimeout
-}
-
 // Check if a particular IP Id (uint16 in layers.IPv4) is in the slice of IP Id's we have sent with a particular TTL value
 func sliceContains(slice []SentPacketData, value uint16) bool {
 	for _, v := range slice {
@@ -371,6 +361,7 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		ErrLogger.Println("upgrade:", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer c.Close()
@@ -381,7 +372,11 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
 		HopData:   traceroute,
 	}
-	zeroTraceResult, _ := json.Marshal(results)
+	zeroTraceResult, err := json.Marshal(results)
+	if err!= nil {
+		ErrLogger.Println("Error logging 0trace results: ", err)
+		InfoLogger.Println(results) // Dump results in non-JSON format
+	}
 	zeroTraceString := string(zeroTraceResult)
 	InfoLogger.Println(zeroTraceString)
 }
