@@ -51,6 +51,7 @@ var (
 	ErrLogger          *log.Logger
 	deviceName         string
 	currTTLIndicator   = make(map[string]int)
+	icmpPktError = errors.New("IP header unavailable")
 )
 
 type RtItem struct {
@@ -174,13 +175,73 @@ func getSentTimestampfromIPId(sentDataSlice []SentPacketData, ipid uint16) (time
 	return time.Now().UTC(), errors.New("IP Id not in sent packets")
 }
 
+func processTCPpkt(packet gopacket.Packet, serverIP string, ipIdHop map[int][]SentPacketData) {
+	ipLayer := packet.Layer(layers.LayerTypeIPv4)
+	ipl, _ := ipLayer.(*layers.IPv4)
+	packetTTL := int(ipl.TTL)
+	currHop := ipl.SrcIP.String()
+	if currHop == serverIP {
+		// in case of retransmissions we might see the same sequence number sent when the TTL was set to different values
+		// but IP Id will remain unique per packet and can be used to correlate received packets
+		// (RFC 1812 says _at least_ IP header must be returned along with the packet)
+		sentTime := packet.Metadata().Timestamp
+		currIPId := ipl.Id
+		if sliceContains(ipIdHop[packetTTL], currIPId) == false {
+			ipIdHop[packetTTL] = append(ipIdHop[packetTTL], SentPacketData{HopIPId: currIPId, HopSentTime: sentTime})
+		}
+	}
+}
+
+func extractTracerouteHopData(currTTL int, currHop net.IP, ipid uint16, recvTimestamp time.Time, counter *int, clientReached bool, ipIdHop map[int][]SentPacketData) HopRTT {
+	if clientReached {
+		ErrLogger.Println("Traceroute reached client (ICMP response) at hop: ", currTTL)
+	} else {
+		ErrLogger.Println("Received packet ipid: ", ipid, " TTL: ", currTTL)
+	}
+	var hopRTTVal time.Duration
+	sentTime, err := getSentTimestampfromIPId(ipIdHop[currTTL], ipid)
+	if err != nil {
+		ErrLogger.Println("Error getting timestamp from sent pkt: ", err)
+		hopRTTVal = 0
+	} else {
+		hopRTTVal = recvTimestamp.Sub(sentTime)
+	}
+	*counter = currTTL
+	return HopRTT{IP: currHop, RTT: fmtTimeMs(hopRTTVal)}
+}
+
+func processICMPpkt(packet gopacket.Packet, clientIP string, currTTL int, counter *int, ipIdHop map[int][]SentPacketData, hops chan HopRTT) (bool, error) {
+	ipLayer := packet.Layer(layers.LayerTypeIPv4)
+	ipl, _ := ipLayer.(*layers.IPv4)
+	currHop := ipl.SrcIP
+
+	icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
+	icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
+	ipHeaderIcmp, err := getHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
+	if err != nil {
+		return false, icmpPktError
+	}
+
+	ipid := ipHeaderIcmp.Id
+	recvTimestamp := packet.Metadata().Timestamp
+	if currHop.String() == clientIP {
+		hops <- extractTracerouteHopData(currTTL, currHop, ipid, recvTimestamp, counter, true, ipIdHop)
+		return true, nil
+	}
+	if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
+		if ipIdHop[currTTL] != nil && sliceContains(ipIdHop[currTTL], ipid) {
+			hops <- extractTracerouteHopData(currTTL, currHop, ipid, recvTimestamp, counter, false, ipIdHop)
+		}
+	}
+	return false, nil
+}
+
 // Listen on the provided pcap handler for packets sent
 func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP string, hops chan HopRTT) {
 	var ipIdHop = make(map[int][]SentPacketData)
 	packetStream := gopacket.NewPacketSource(handle, handle.LinkType())
 	var counter int
 	timerPerHopPerUUID[uuid] = time.Now().UTC()
-	var hopRTTVal time.Duration
 
 	for packet := range packetStream.Packets() {
 		currTTL := currTTLIndicator[uuid]
@@ -192,58 +253,17 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 		icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
 
 		if ipLayer != nil {
-			ipl, _ := ipLayer.(*layers.IPv4)
-			currHop := ipl.SrcIP.String()
 			// To identify the TCP packet that we have sent
 			if tcpLayer != nil {
-				packetTTL := int(ipl.TTL)
-				if currHop == serverIP {
-					// in case of retransmissions we might see the same sequence number sent when the TTL was set to different values
-					// but IP Id will remain unique per packet and can be used to correlate received packets
-					// (RFC 1812 says _at least_ IP header must be returned along with the packet)
-					sentTime := packet.Metadata().Timestamp
-					currIPId := ipl.Id
-					if sliceContains(ipIdHop[packetTTL], currIPId) == false {
-						ipIdHop[packetTTL] = append(ipIdHop[packetTTL], SentPacketData{HopIPId: currIPId, HopSentTime: sentTime})
-					}
-				}
+				processTCPpkt(packet, serverIP, ipIdHop)
 			}
-
 			// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
 			if icmpLayer != nil && counter != currTTL {
-				icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
-				ipHeaderIcmp, err := getHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
-				if err != nil {
+				clientFound, err := processICMPpkt(packet, clientIP, currTTL, &counter, ipIdHop, hops)
+				if err == icmpPktError {
 					continue
-				}
-				ipid := ipHeaderIcmp.Id
-				recvTimestamp := packet.Metadata().Timestamp
-				if currHop == clientIP {
-					sentTime, err := getSentTimestampfromIPId(ipIdHop[currTTL], ipid)
-					if err != nil {
-						ErrLogger.Println(err)
-						hopRTTVal = 0
-					} else {
-						hopRTTVal = recvTimestamp.Sub(sentTime)
-					}
-					ErrLogger.Println("Traceroute reached client (ICMP response) at hop: ", currTTL)
-					counter = currTTL // ensure skipped ttls are fine
-					hops <- HopRTT{IP: ipl.SrcIP, RTT: fmtTimeMs(hopRTTVal)}
+				} else if clientFound {
 					return
-				}
-				if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
-					if ipIdHop[currTTL] != nil && sliceContains(ipIdHop[currTTL], ipid) {
-						ErrLogger.Println("Received packet ipid: ", ipid, " TTL: ", currTTL)
-						sentTime, err := getSentTimestampfromIPId(ipIdHop[currTTL], ipid)
-						if err != nil {
-							ErrLogger.Println("Bad Error: ", err) // this should not happen because we are making the same checks
-							hopRTTVal = 0
-						} else {
-							hopRTTVal = recvTimestamp.Sub(sentTime)
-						}
-						counter = currTTL // ensure skipped ttls are fine
-						hops <- HopRTT{IP: ipl.SrcIP, RTT: fmtTimeMs(hopRTTVal)}
-					}
 				}
 			}
 		}
