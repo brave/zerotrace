@@ -332,16 +332,15 @@ func start0trace(uuid string, netConn net.Conn) map[int]HopRTT {
 		select {
 		case hopData := <-recvdHop:
 			traceroute[ttlValue] = hopData
-			if hopData.IP.String() == clientIP {
-				break
-			}
 		case <-ticker.C:
 			ErrLogger.Println("Traceroute Hop Timeout at Hop ", ttlValue, ". Moving on to the next hop.")
 			var empty net.IP
 			traceroute[ttlValue] = HopRTT{empty, 0}
 			continue
 		}
-
+		if traceroute[ttlValue].IP.String() == clientIP {
+			break
+		}
 	}
 	return traceroute
 }
