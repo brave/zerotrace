@@ -182,13 +182,26 @@ func main() {
 
 	if len(result) > 0 {
 		last, client := runIcmpPingForEval(lastHop, clientIP)
-		fullResult := Result{Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"), ClientIP: clientIP, Traceroute: result, Lasthop: lastHop, Lastping: last, ClientPing: client}
+		fullResult := Result{
+			Timestamp:  time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+			ClientIP:   clientIP,
+			Traceroute: result,
+			Lasthop:    lastHop,
+			Lastping:   last,
+			ClientPing: client,
+		}
 		logStructasJson(fullResult, InfoLogger)
 
 		diff, ok := calcAvgDifference(last, client)
+		// do not log if we were unable to obtain either of the RTTs
 		if ok {
-			// do not log if we were unable to obtain either of the RTTs
-			rttStat := AvgRTTcompare{Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"), ClientIP: clientIP, LastHop: last.AvgRtt, ClientHop: client.AvgRtt, Difference: diff}
+			rttStat := AvgRTTcompare{
+				Timestamp:  time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+				ClientIP:   clientIP,
+				LastHop:    last.AvgRtt,
+				ClientHop:  client.AvgRtt,
+				Difference: diff,
+			}
 			logStructasJson(rttStat, EvalLogger)
 		}
 	}
