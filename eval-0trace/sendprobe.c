@@ -16,7 +16,7 @@
 
 #define fatal(x) do { perror(x); exit(1); } while (0)
 
-#define MAXDIST     30
+#define MAXDIST     64
 #define MAXSEQDELTA 3
 
 static _u8 synpacket[] = {
