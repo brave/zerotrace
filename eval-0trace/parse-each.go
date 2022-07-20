@@ -25,6 +25,7 @@ type Hops struct {
 }
 
 type Result struct {
+	Timestamp  string
 	ClientIP   string
 	Traceroute []Hops
 	Lasthop    string
@@ -33,7 +34,8 @@ type Result struct {
 }
 
 type AvgRTTcompare struct {
-	ClientIP	string
+	Timestamp  string
+	ClientIP   string
 	LastHop    float64
 	ClientHop  float64
 	Difference float64
@@ -53,7 +55,7 @@ type RtItem struct {
 	StdDevRtt float64
 }
 
-// From proxy-detection-server icmp pinger code
+// IcmpPing conducts the ICMP ping measurement, code from proxy-detection-server
 func IcmpPing(ip string) (RtItem, error) {
 	pinger, err := ping.NewPinger(ip)
 	if err != nil {
@@ -73,6 +75,7 @@ func IcmpPing(ip string) (RtItem, error) {
 
 }
 
+// calcAvgDifference calculates the difference between the AvgRtt of the two given RtItem objects
 func calcAvgDifference(last RtItem, client RtItem) (float64, bool) {
 	if last.AvgRtt == 0 || client.AvgRtt == 0 {
 		return 0, false
@@ -84,6 +87,8 @@ func fmtTimeMs(value time.Duration) float64 {
 	return (float64(value) / float64(time.Millisecond))
 }
 
+// parseTracerouteFile takes the path of a 0trace output file as input
+// and parses and returns the traceroute hops, clientIP from the path, and the last hop obtained by 0trace
 func parseTracerouteFile(tracefile string) ([]Hops, string, string) {
 	clientparts := strings.Split(tracefile, ".txt")
 	ipPath := clientparts[0]
@@ -127,6 +132,31 @@ func parseTracerouteFile(tracefile string) ([]Hops, string, string) {
 	return result, clientIP, lastHop
 }
 
+// runIcmpPingForEval runs an ICMP Ping measurement for the given two IP (strings) and returns the RtItem for each
+func runIcmpPingForEval(lastHop string, clientIP string) (RtItem, RtItem) {
+	last, err := IcmpPing(lastHop)
+	if err != nil {
+		InfoLogger.Fatal("IcmpPing fail for client: ", clientIP, " err: ", err)
+	}
+
+	client, err := IcmpPing(clientIP)
+	if err != nil {
+		InfoLogger.Fatal("IcmpPing fail for client: ", clientIP, " err: ", err)
+	}
+	return last, client
+}
+
+// logStructasJson logs the given object to the provided logger
+func logStructasJson(obj any, GivenLogger *log.Logger) {
+	objResult, err := json.Marshal(obj)
+	if err != nil {
+		GivenLogger.Println("Error logging results: ", err)
+		GivenLogger.Println(objResult) // Dump results in non-JSON format
+	}
+	objResultString := string(objResult)
+	GivenLogger.Println(objResultString)
+}
+
 func main() {
 	var outputfilePath string
 	var evalrttfilePath string
@@ -146,38 +176,21 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	EvalLogger = log.New(evalfile, "", 0)
 
 	result, clientIP, lastHop := parseTracerouteFile(tracefile)
+
 	if len(result) > 0 {
-		last, err := IcmpPing(lastHop)
-		if err != nil {
-			InfoLogger.Fatal("IcmpPing fail file: ", file, " err: ", err)
-		}
-		client, err := IcmpPing(clientIP)
-		if err != nil {
-			InfoLogger.Fatal("IcmpPing fail file: ", file, " err: ", err)
-		}
-		fullResult := Result{ClientIP: clientIP, Traceroute: result, Lasthop: lastHop, Lastping: last, ClientPing: client}
+		last, client := runIcmpPingForEval(lastHop, clientIP)
+		fullResult := Result{Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"), ClientIP: clientIP, Traceroute: result, Lasthop: lastHop, Lastping: last, ClientPing: client}
+		logStructasJson(fullResult, InfoLogger)
+
 		diff, ok := calcAvgDifference(last, client)
 		if ok {
-			rttStat := AvgRTTcompare{ClientIP: clientIP, LastHop: last.AvgRtt, ClientHop: client.AvgRtt, Difference: diff}
-			rttResult, err := json.Marshal(rttStat)
-			if err != nil {
-				EvalLogger.Println("Error logging RTT diff results: ", err)
-				EvalLogger.Println(rttResult) // Dump results in non-JSON format
-			}
-			rttStatString := string(rttResult)
-			EvalLogger.Println(rttStatString)
+			// do not log if we were unable to obtain either of the RTTs
+			rttStat := AvgRTTcompare{Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"), ClientIP: clientIP, LastHop: last.AvgRtt, ClientHop: client.AvgRtt, Difference: diff}
+			logStructasJson(rttStat, EvalLogger)
 		}
-		traceResult, err := json.Marshal(fullResult)
-		if err != nil {
-			InfoLogger.Println("Error logging 0trace results: ", err)
-			InfoLogger.Println(fullResult) // Dump results in non-JSON format
-		}
-		traceString := string(traceResult)
-		InfoLogger.Println(traceString)
 	}
 
 }
