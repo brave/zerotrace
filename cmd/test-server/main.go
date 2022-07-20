@@ -456,10 +456,10 @@ func getMeanIcmpRTT(icmp []RtItem) float64 {
 		sum += x.AvgRtt
 		len += 1
 	}
-	if len == 0 {
-		return 0
-	}
 	var avg float64 = sum / len
+	if math.IsNaN(avg) {
+		return 0.0
+	}
 	return avg
 }
 
