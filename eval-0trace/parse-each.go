@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const zeroTraceBeginString = "TRACE RESULTS"
+
 var (
 	InfoLogger *log.Logger
 	EvalLogger *log.Logger
@@ -39,7 +41,6 @@ type AvgRTTcompare struct {
 
 const ICMPCount = 5
 const ICMPTimeout = time.Second * 10
-const batchSizeLimit int = 200 // rate becomes roughly 1000 per batch
 
 type RtItem struct {
 	IP        string
@@ -68,8 +69,6 @@ func IcmpPing(ip string) (RtItem, error) {
 	}
 	stat := pinger.Statistics()
 	icmp := RtItem{ip, stat.PacketsSent, stat.PacketsRecv, stat.PacketLoss, fmtTimeMs(stat.MinRtt), fmtTimeMs(stat.AvgRtt), fmtTimeMs(stat.MaxRtt), fmtTimeMs(stat.StdDevRtt)}
-	// jsObj, _ := json.Marshal(icmp)
-	// resultString := string(jsObj)
 	return icmp, nil
 
 }
@@ -83,6 +82,49 @@ func calcAvgDifference(last RtItem, client RtItem) (float64, bool) {
 
 func fmtTimeMs(value time.Duration) float64 {
 	return (float64(value) / float64(time.Millisecond))
+}
+
+func parseTracerouteFile(tracefile string) ([]Hops, string, string) {
+	clientparts := strings.Split(tracefile, ".txt")
+	ipPath := clientparts[0]
+	ipsplit := strings.Split(ipPath, "/")
+	clientIP := ipsplit[len(ipsplit)-1]
+
+	readfile, _ := os.Open(tracefile) // opens in read mode
+	content := bufio.NewScanner(readfile)
+	found := false
+
+	var result []Hops
+	var lastHop string
+
+	// read all lines into slice
+	allLines := make([]string, 0)
+	for content.Scan() {
+		allLines = append(allLines, content.Text())
+	}
+
+	for _, lines := range allLines {
+		if strings.Contains(lines, zeroTraceBeginString) {
+			found = true
+			continue
+		}
+		// skip all lines prior to zeroTraceBeginString
+		if !found {
+			continue
+		}
+		parts := strings.Split(lines, " ")
+		hop := parts[0]
+		hopInt, _ := strconv.Atoi(hop)
+		if hopInt == 0 || len(parts) == 1 {
+			continue
+		} else {
+			ipaddr := parts[1]
+			currHop := Hops{Hop: hopInt, IP: ipaddr}
+			lastHop = ipaddr
+			result = append(result, currHop)
+		}
+	}
+	return result, clientIP, lastHop
 }
 
 func main() {
@@ -107,44 +149,8 @@ func main() {
 
 	EvalLogger = log.New(evalfile, "", 0)
 
-	clientparts := strings.Split(tracefile, ".txt")
-	ipPath := clientparts[0]
-	ipsplit := strings.Split(ipPath, "/")
-	clientIP := ipsplit[len(ipsplit)-1]
-	readfile, _ := os.Open(tracefile)
-	content := bufio.NewScanner(readfile)
-	found := false
-	var result []Hops
-	var lastHop string
-
-	allLines := make([]string, 0)
-	for content.Scan() {
-		allLines = append(allLines, content.Text())
-	}
-	for _, lines := range allLines {
-		if strings.Contains(lines, "TRACE RESULTS") {
-			found = true
-			continue
-		}
-		if !found {
-			continue
-		}
-		parts := strings.Split(lines, " ")
-		hop := parts[0]
-		hopInt, _ := strconv.Atoi(hop)
-		if hopInt == 0 || len(parts) == 1 {
-			continue
-		} else {
-			ipaddr := parts[1]
-			currHop := Hops{Hop: hopInt, IP: ipaddr}
-			lastHop = ipaddr
-			result = append(result, currHop)
-		}
-	}
-	if len(result) == 0 {
-		found = false
-	}
-	if found == true {
+	result, clientIP, lastHop := parseTracerouteFile(tracefile)
+	if len(result) > 0 {
 		last, err := IcmpPing(lastHop)
 		if err != nil {
 			InfoLogger.Fatal("IcmpPing fail file: ", file, " err: ", err)
