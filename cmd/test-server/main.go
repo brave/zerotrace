@@ -108,7 +108,9 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		ErrLogger.Println("upgrade:", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+
 	}
 	defer c.Close()
 	for {
@@ -287,8 +289,8 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 	}
 }
 
-// sendTracePacket sends the TTL limited probe on the tcpConn, and sets the ttlValue using ipConn.SetTTL
-func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clientPort int, sentString string, ttlValue int) bool {
+// sendTracePacket sends the TTL limited probe on the tcpConn, and sets the ttlValue using ipConn.SetTTL, and return errors if any
+func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clientPort int, sentString string, ttlValue int) error {
 	rawBytes := []byte(sentString)
 	localSrcAddr := tcpConn.LocalAddr().String()
 	localSrcIP, localSrcPortString, _ := net.SplitHostPort(localSrcAddr)
@@ -316,23 +318,23 @@ func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clientPo
 		gopacket.Payload(rawBytes),
 	)
 	if serializeErr != nil {
-		ErrLogger.Println("Serialize error: ", serializeErr)
-		return false
+		ErrLogger.Println("Send Packet Error: Serialize: ", serializeErr)
+		return serializeErr
 	}
 
 	ttlErr := ipConn.SetTTL(int(ttlValue))
 	if ttlErr != nil {
-		ErrLogger.Println("Error setting ttl: ", ttlErr)
-		return false
+		ErrLogger.Println("Send Packet Error: Setting ttl: ", ttlErr)
+		return ttlErr
 	}
 
 	outgoingPacket := buffer.Bytes()
 	if _, err := tcpConn.Write(outgoingPacket); err != nil {
-		ErrLogger.Println("Error writing to connection: ", err)
-		return false
+		ErrLogger.Println("Send Packet Error writing to connection: ", err)
+		return err
 	}
 	ErrLogger.Println("Sent ", ttlValue, " packet")
-	return true
+	return nil
 }
 
 // start0trace reaches the underlying connection and sets up necessary pcap handles
@@ -367,11 +369,11 @@ func start0trace(uuid string, netConn net.Conn) map[int]HopRTT {
 	// Stop sending any more probes if connection errors out
 	for ttlValue := beginTTLValue; ttlValue <= MaxTTLHops; ttlValue++ {
 		sentString := stringToSend + strconv.Itoa(ttlValue)
-		sent := sendTracePacket(tcpConn, ipConn, dstIP, clientPort, sentString, ttlValue)
-		currTTLIndicator[uuid] = ttlValue
-		if sent == false {
+		sendError := sendTracePacket(tcpConn, ipConn, dstIP, clientPort, sentString, ttlValue)
+		if sendError != nil {
 			break
 		}
+		currTTLIndicator[uuid] = ttlValue
 		ticker := time.NewTicker(tracerouteHopTimeout)
 		defer ticker.Stop()
 		select {
