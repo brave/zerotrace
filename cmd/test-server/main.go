@@ -89,18 +89,18 @@ type TracerouteResults struct {
 	HopData   map[int]HopRTT
 }
 
-// Check if UUID is valid
+// isValidUUID checks if UUID u is valid
 func isValidUUID(u string) bool {
 	_, err := uuid.Parse(u)
 	return err == nil
 }
 
-// Implementing this since Golang time.Milliseconds() function only returns an int64 value
+// fmtTimeMs returns the value (time.Duration) in milliseconds, the inbuilt time.Milliseconds() function only returns an int64 value
 func fmtTimeMs(value time.Duration) float64 {
 	return (float64(value) / float64(time.Millisecond))
 }
 
-// Handler for the echo webserver that speaks WebSocket
+// echoHandler for the echo webserver that speaks WebSocket
 func echoHandler(w http.ResponseWriter, r *http.Request) {
 	if checkHTTPParams(w, r, "/echo") {
 		return
@@ -136,7 +136,7 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Parse IP headers from ICMP Response Payload
+// getHeaderFromICMPResponsePayload parses IP headers from ICMP Response Payload of the icmpPkt and returns IP header, and error if any
 func getHeaderFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, error) {
 	if len(icmpPkt) < 1 {
 		return nil, errors.New("Invalid IP header")
@@ -156,7 +156,7 @@ func getHeaderFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, error) {
 	return &ip, nil
 }
 
-// Check if a particular IP Id (uint16 in layers.IPv4) is in the slice of IP Id's we have sent with a particular TTL value
+// sliceContains checks if a particular IP Id (uint16 in layers.IPv4) is present in the slice of IP Ids we provide
 func sliceContains(slice []SentPacketData, value uint16) bool {
 	for _, v := range slice {
 		if v.HopIPId == value {
@@ -166,6 +166,7 @@ func sliceContains(slice []SentPacketData, value uint16) bool {
 	return false
 }
 
+// getSentTimestampfromIPId traverses the []SentPacketData slice and returns the HopSentTime associated with the provided ipid, and error if any
 func getSentTimestampfromIPId(sentDataSlice []SentPacketData, ipid uint16) (time.Time, error) {
 	for _, v := range sentDataSlice {
 		if v.HopIPId == ipid {
@@ -175,15 +176,17 @@ func getSentTimestampfromIPId(sentDataSlice []SentPacketData, ipid uint16) (time
 	return time.Now().UTC(), errors.New("IP Id not in sent packets")
 }
 
+// processTCPpkt processes packet (known to contain a TCP layer)
+// as long the packet's srcIP matches the serverIP, it updates the ipIdHop map with the TTL and IPID seen on the packet
+// In case of retransmissions we might see repeated sequence numbers on packets, although the underlying TTL set (using setTTL) has changed
+// However, IP Id will remain unique per packet and can be used to correlate received packets
+// (RFC 1812 says _at least_ IP header must be returned along with the packet)
 func processTCPpkt(packet gopacket.Packet, serverIP string, ipIdHop map[int][]SentPacketData) {
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
 	ipl, _ := ipLayer.(*layers.IPv4)
 	packetTTL := int(ipl.TTL)
 	currHop := ipl.SrcIP.String()
 	if currHop == serverIP {
-		// in case of retransmissions we might see the same sequence number sent when the TTL was set to different values
-		// but IP Id will remain unique per packet and can be used to correlate received packets
-		// (RFC 1812 says _at least_ IP header must be returned along with the packet)
 		sentTime := packet.Metadata().Timestamp
 		currIPId := ipl.Id
 		if sliceContains(ipIdHop[packetTTL], currIPId) == false {
@@ -192,6 +195,11 @@ func processTCPpkt(packet gopacket.Packet, serverIP string, ipIdHop map[int][]Se
 	}
 }
 
+// extractTracerouteHopData obtains the time stamp for the TTL-limited packet which was sent for the "currTTL" value, 
+// and subtracts that from the recvTimestamp supplied to calculate RTT for the current hop
+// and returns the HopRTT object with the calculated RTT value.
+// It updates the counter object to the currTTL value and 
+// logs the current TTL value if the client has already been reached
 func extractTracerouteHopData(currTTL int, currHop net.IP, ipid uint16, recvTimestamp time.Time, counter *int, clientReached bool, ipIdHop map[int][]SentPacketData) HopRTT {
 	if clientReached {
 		ErrLogger.Println("Traceroute reached client (ICMP response) at hop: ", currTTL)
@@ -210,6 +218,12 @@ func extractTracerouteHopData(currTTL int, currHop net.IP, ipid uint16, recvTime
 	return HopRTT{IP: currHop, RTT: fmtTimeMs(hopRTTVal)}
 }
 
+// processICMPpkt takes the packet (known to contain an ICMP layer, and is not a duplicate for the TTL we have already evaluated)
+// it extracts received timestamp and the IP header of the original packet from the ICMP packet payload which it uses to get the original IP Id
+// it extracts the Hop RTT data, and passes the extracted data to the hops channel if: 
+	// the packet contains the TTL Exceeded error code, and the ipIdHop map contains the found IP Id at the current TTL, 
+	// or the client IP has been reached
+// it retuns true if the client has been reached, and returns false if otherwise, and error if any
 func processICMPpkt(packet gopacket.Packet, clientIP string, currTTL int, counter *int, ipIdHop map[int][]SentPacketData, hops chan HopRTT) (bool, error) {
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
 	ipl, _ := ipLayer.(*layers.IPv4)
@@ -236,7 +250,7 @@ func processICMPpkt(packet gopacket.Packet, clientIP string, currTTL int, counte
 	return false, nil
 }
 
-// Listen on the provided pcap handler for packets sent
+// recvPackets listens on the provided pcap handler for packets sent, processes TCP and ICMP packets differently
 func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP string, hops chan HopRTT) {
 	var ipIdHop = make(map[int][]SentPacketData)
 	packetStream := gopacket.NewPacketSource(handle, handle.LinkType())
@@ -273,7 +287,7 @@ func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP str
 	}
 }
 
-// Send the TTL limited probe
+// sendTracePacket sends the TTL limited probe on the tcpConn, and sets the ttlValue using ipConn.SetTTL
 func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clientPort int, sentString string, ttlValue int) bool {
 	rawBytes := []byte(sentString)
 	localSrcAddr := tcpConn.LocalAddr().String()
@@ -321,7 +335,8 @@ func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clientPo
 	return true
 }
 
-// Reach the underlying connection and set up necessary handler and initalize 0trace set up
+// start0trace reaches the underlying connection and sets up necessary pcap handles 
+// and implements the 0trace method of sending TTL-limited probes on an existing TCP connection
 func start0trace(uuid string, netConn net.Conn) map[int]HopRTT {
 	clientIPstr := netConn.RemoteAddr().String()
 	clientIP, clPort, _ := net.SplitHostPort(clientIPstr)
@@ -375,7 +390,7 @@ func start0trace(uuid string, netConn net.Conn) map[int]HopRTT {
 	return traceroute
 }
 
-// Handler that speaks WebSocket for extracting underlying connection to use for 0trace
+// traceHandler speaks WebSocket for extracting underlying connection to use for 0trace
 func traceHandler(w http.ResponseWriter, r *http.Request) {
 	if checkHTTPParams(w, r, "/trace") {
 		return
@@ -410,7 +425,7 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	InfoLogger.Println(zeroTraceString)
 }
 
-// Send ICMP pings and return statistics
+// IcmpPinger sends ICMP pings and returns statistics
 func IcmpPinger(ip string) RtItem {
 	pinger, err := ping.NewPinger(ip)
 	if err != nil {
@@ -428,7 +443,7 @@ func IcmpPinger(ip string) RtItem {
 	return icmp
 }
 
-// Avg RTT from all successful ICMP measurements, to display on webpage
+// getMeanIcmpRTT gets Avg RTT from all successful ICMP measurements, to display on webpage
 func getMeanIcmpRTT(icmp []RtItem) float64 {
 	var sum float64 = 0
 	var len float64 = 0
@@ -446,7 +461,7 @@ func getMeanIcmpRTT(icmp []RtItem) float64 {
 	return avg
 }
 
-// Checks if request method is GET, and ensures URL path is right
+// checkHTTPParams checks if request method is GET, and ensures URL path is right
 func checkHTTPParams(w http.ResponseWriter, r *http.Request, pathstring string) bool {
 	if r.URL.Path != pathstring {
 		http.NotFound(w, r)
@@ -460,7 +475,7 @@ func checkHTTPParams(w http.ResponseWriter, r *http.Request, pathstring string) 
 	return false
 }
 
-// Handler for ICMP measurements which also serves the webpage via a template
+// pingHandler for ICMP measurements which also serves the webpage via a template
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 	if checkHTTPParams(w, r, "/ping") {
 		return
@@ -493,6 +508,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	WebTemplate.Execute(w, results)
 }
 
+// indexHandler serves the default index page with reasons for scanning IPs on this server and point of contact
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	if checkHTTPParams(w, r, "/") {
 		return
@@ -501,6 +517,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, path)
 }
 
+// redirectToTLS helps redirect HTTP connections to HTTPS
 func redirectToTLS(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
 }
