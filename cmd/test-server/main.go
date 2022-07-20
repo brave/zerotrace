@@ -51,7 +51,7 @@ var (
 	ErrLogger          *log.Logger
 	deviceName         string
 	currTTLIndicator   = make(map[string]int)
-	icmpPktError = errors.New("IP header unavailable")
+	icmpPktError       = errors.New("IP header unavailable")
 )
 
 type RtItem struct {
@@ -195,10 +195,10 @@ func processTCPpkt(packet gopacket.Packet, serverIP string, ipIdHop map[int][]Se
 	}
 }
 
-// extractTracerouteHopData obtains the time stamp for the TTL-limited packet which was sent for the "currTTL" value, 
+// extractTracerouteHopData obtains the time stamp for the TTL-limited packet which was sent for the "currTTL" value,
 // and subtracts that from the recvTimestamp supplied to calculate RTT for the current hop
 // and returns the HopRTT object with the calculated RTT value.
-// It updates the counter object to the currTTL value and 
+// It updates the counter object to the currTTL value and
 // logs the current TTL value if the client has already been reached
 func extractTracerouteHopData(currTTL int, currHop net.IP, ipid uint16, recvTimestamp time.Time, counter *int, clientReached bool, ipIdHop map[int][]SentPacketData) HopRTT {
 	if clientReached {
@@ -220,9 +220,9 @@ func extractTracerouteHopData(currTTL int, currHop net.IP, ipid uint16, recvTime
 
 // processICMPpkt takes the packet (known to contain an ICMP layer, and is not a duplicate for the TTL we have already evaluated)
 // it extracts received timestamp and the IP header of the original packet from the ICMP packet payload which it uses to get the original IP Id
-// it extracts the Hop RTT data, and passes the extracted data to the hops channel if: 
-	// the packet contains the TTL Exceeded error code, and the ipIdHop map contains the found IP Id at the current TTL, 
-	// or the client IP has been reached
+// it extracts the Hop RTT data, and passes the extracted data to the hops channel if:
+// the packet contains the TTL Exceeded error code, and the ipIdHop map contains the found IP Id at the current TTL,
+// or the client IP has been reached
 // it retuns true if the client has been reached, and returns false if otherwise, and error if any
 func processICMPpkt(packet gopacket.Packet, clientIP string, currTTL int, counter *int, ipIdHop map[int][]SentPacketData, hops chan HopRTT) (bool, error) {
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
@@ -335,7 +335,7 @@ func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clientPo
 	return true
 }
 
-// start0trace reaches the underlying connection and sets up necessary pcap handles 
+// start0trace reaches the underlying connection and sets up necessary pcap handles
 // and implements the 0trace method of sending TTL-limited probes on an existing TCP connection
 func start0trace(uuid string, netConn net.Conn) map[int]HopRTT {
 	clientIPstr := netConn.RemoteAddr().String()
