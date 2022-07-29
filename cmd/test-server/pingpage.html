@@ -13,13 +13,12 @@
   </head>
 
   <body>
-    <h2>Calculate Latency Using WebSockets and Measure ICMP and TCP latency</h2>
+    <h2>Calculate Latency Using WebSockets and Measure ICMP latency</h2>
     <p>Experiment UUID: &ensp;</p><p id="uuid"></p><br>
     <p>Your IP: &ensp;</p><p id="ip"></p> <br>
     <p>All WebSocket measurements: &ensp;</p><p id="values"></p> <br>
     <p>Median WS latency: &ensp;</p><p id="data"></p> <br>
-    <p>ICMP ping statistics: We conducted measaurements to all IPs adjacent to your IP (i.e. same /24 subnet), Average RTT: &ensp;</p> <p id="icmp"></p> <br>
-    <p>TCP ping statistics: we conducted TCP (SYN) measurements to six ports for all IPs adjacent to your IP (same /24 subnet), Average RTT: &ensp;</p><p id="tcp"></p> <br>
+    <p>ICMP ping statistics: We conducted measaurements to your IP. Average RTT: &ensp;</p> <p id="icmp"></p> <br>
       <script>
      function median(values){
             if (values.length ===0) return 0;
@@ -68,9 +67,11 @@
                 latencies.push(roundToTwo(messages[i+1].ts - messages[i].ts));
               }
               if (statsSent == false) {
+              const datetimeutc = new Date().toISOString();
               socket.send(JSON.stringify({
                 UUID: uuid,
                 IP: ipaddress,
+                Timestamp: datetimeutc,
                 latencies: latencies,
               }));
               statsSent = true;
@@ -80,14 +81,38 @@
           }
         });
         }
+    const keepAlivePktInterval = 1000;
+    const keepAliveTimePeriodms = 600000;
+    function makeAnotherWs() {
+          var ipaddress = {{ .IPaddr }};
+          var uuid = {{ .UUID }};
+          const webSocketAddr = 'wss://test.reethika.info/trace?uuid={{ .UUID }}';
+          // Create a Web Socket
+          const socket = new WebSocket(webSocketAddr);
+          var startTime = new Date().getTime(); 
+          const intervalId = setInterval(() => {
+            if(new Date().getTime() - startTime > keepAliveTimePeriodms){
+              clearInterval(intervalId);
+              return;
+            }
+            socket.send("Keep alive");
+          }, keepAlivePktInterval);
 
-      getLatencyWebSocket().then((latencies) => {
+          socket.onerror = function (err) {
+            reject(err.toString());
+          }
+          socket.onopen = function () {
+          }
+    }
+
+	   makeAnotherWs();
+
+     getLatencyWebSocket().then((latencies) => {
         document.getElementById('uuid').innerHTML = {{ .UUID }};
         document.getElementById('ip').innerHTML = {{ .IPaddr }};
         document.getElementById('values').innerHTML = latencies;
         document.getElementById('data').innerHTML = median(latencies);
         document.getElementById('icmp').innerHTML = {{ .AvgIcmpStat }};
-        document.getElementById('tcp').innerHTML = {{ .AvgTcpStat }};
       });
     </script>
   </body>
