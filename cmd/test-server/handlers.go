@@ -9,6 +9,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
+)
+
+var (
+	upgrader = websocket.Upgrader{}
 )
 
 // indexHandler serves the default index page with reasons for scanning IPs on this server and point of contact
