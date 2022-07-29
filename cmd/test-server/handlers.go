@@ -55,7 +55,10 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	resultString := string(jsObj)
 	InfoLogger.Println(resultString)
 	var WebTemplate, _ = template.ParseFiles(path.Join(directoryPath, "pingpage.html"))
-	WebTemplate.Execute(w, results)
+	if err := WebTemplate.Execute(w, results); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 // traceHandler speaks WebSocket for extracting underlying connection to use for 0trace
@@ -114,7 +117,10 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		// ReadMessage() returns messageType int, p []byte, err error]
 		var wsData map[string]interface{}
-		json.Unmarshal(message, &wsData)
+		if err := json.Unmarshal(message, &wsData); err != nil {
+			ErrLogger.Println("unmarshal:", err)
+			break
+		}
 		if wsData["type"] != "ws-latency" {
 			if wsUUID, ok := wsData["UUID"].(string); ok {
 				// Only log the final message with all latencies calculated, and don't log other unsolicited echo messages

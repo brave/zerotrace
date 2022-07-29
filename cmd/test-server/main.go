@@ -24,8 +24,7 @@ func checkHTTPParams(w http.ResponseWriter, r *http.Request, pathstring string) 
 		return true
 	}
 	if r.Method != "GET" {
-		w.WriteHeader(http.StatusNotImplemented)
-		w.Write([]byte(http.StatusText(http.StatusNotImplemented)))
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return true
 	}
 	return false
@@ -67,5 +66,5 @@ func main() {
 			log.Fatalf("ListenAndServe port 80 error: %v", err)
 		}
 	}()
-	http.ListenAndServeTLS(":443", fullChain, privKey, nil)
+	log.Fatal(http.ListenAndServeTLS(":443", fullChain, privKey, nil))
 }

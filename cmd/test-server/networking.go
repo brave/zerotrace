@@ -20,7 +20,6 @@ import (
 const (
 	ICMPCount            = 5
 	ICMPTimeout          = time.Second * 10
-	batchSizeLimit       = 100
 	beginTTLValue        = 5
 	MaxTTLHops           = 32
 	stringToSend         = "test string tcp"
@@ -320,7 +319,7 @@ func processTCPpkt(packet gopacket.Packet, serverIP string, ipIdHop map[int][]Se
 	if currHop == serverIP {
 		sentTime := packet.Metadata().Timestamp
 		currIPId := ipl.Id
-		if sliceContains(ipIdHop[packetTTL], currIPId) == false {
+		if !sliceContains(ipIdHop[packetTTL], currIPId) {
 			ipIdHop[packetTTL] = append(ipIdHop[packetTTL], SentPacketData{HopIPId: currIPId, HopSentTime: sentTime})
 		}
 	}
