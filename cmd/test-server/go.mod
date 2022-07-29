@@ -1,4 +1,4 @@
-module test-server
+module latsrv
 
 go 1.18
 
