@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"html/template"
 	"net"
 	"net/http"
 	"path"
-	"text/template"
 	"time"
 
 	"github.com/google/uuid"
