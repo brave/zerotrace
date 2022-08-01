@@ -66,5 +66,5 @@ func main() {
 			log.Fatalf("ListenAndServe port 80 error: %v", err)
 		}
 	}()
-	log.Fatal(http.ListenAndServeTLS(":443", fullChain, privKey, nil))
+	ErrLogger.Fatal(http.ListenAndServeTLS(":443", fullChain, privKey, nil))
 }

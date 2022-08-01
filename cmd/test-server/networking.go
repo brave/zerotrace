@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"net"
 	"strconv"
@@ -124,7 +123,7 @@ func start0trace(uuid string, netConn net.Conn) map[int]HopRTT {
 	}
 
 	if err = handle.SetBPFFilter(fmt.Sprintf("(tcp and port %d and host %s) or icmp", clientPort, clientIP)); err != nil {
-		log.Fatal(err)
+		ErrLogger.Fatal(err)
 	}
 	recvdHop := make(chan HopRTT)
 	traceroute := make(map[int]HopRTT)
