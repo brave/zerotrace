@@ -75,12 +75,19 @@ func IcmpPing(ip string) (RtItem, error) {
 
 }
 
-// calcAvgDifference calculates the difference between the AvgRtt of the two given RtItem objects
-func calcAvgDifference(last RtItem, client RtItem) (float64, bool) {
-	if last.AvgRtt == 0 || client.AvgRtt == 0 {
+// checkValidEvalResult checks if last hop is the same as the client hop and if so, returns an RTT differnce of 0.
+// Otherwise it checks if both hops were reachable and only then calculates the difference between the AvgRtts and returns it.
+// If neither of these cases, the evaluation result is invalid and ok (bool) is set to false
+func checkValidEvalResult(last RtItem, client RtItem) (float64, bool) {
+	var diff float64
+	if last.IP == client.IP {
+		diff = 0 // ping the hops but don't check for difference
+	} else if last.AvgRtt != 0 && client.AvgRtt != 0 {
+		diff = client.AvgRtt - last.AvgRtt
+	} else {
 		return 0, false
 	}
-	return client.AvgRtt - last.AvgRtt, true
+	return diff, true
 }
 
 func fmtTimeMs(value time.Duration) float64 {
@@ -161,6 +168,7 @@ func main() {
 	var outputfilePath string
 	var evalrttfilePath string
 	var tracefile string
+
 	flag.StringVar(&outputfilePath, "outputfile", "output.jsonl", "Path to full output file")
 	flag.StringVar(&evalrttfilePath, "evalrttfile", "eval-rtt.jsonl", "Path to eval rtt file")
 	flag.StringVar(&tracefile, "tracefile", "", "Path to input 0trace file")
@@ -192,8 +200,7 @@ func main() {
 		}
 		logStructasJson(fullResult, InfoLogger)
 
-		diff, ok := calcAvgDifference(last, client)
-		// do not log if we were unable to obtain either of the RTTs
+		diff, ok := checkValidEvalResult(last, client)
 		if ok {
 			rttStat := AvgRTTcompare{
 				Timestamp:  time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
@@ -205,5 +212,4 @@ func main() {
 			logStructasJson(rttStat, EvalLogger)
 		}
 	}
-
 }
