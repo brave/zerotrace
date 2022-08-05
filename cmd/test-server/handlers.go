@@ -81,7 +81,13 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 	myConn := c.UnderlyingConn()
-	traceroute := start0trace(uuid, myConn)
+	zeroTraceInstance := newZeroTrace(deviceName, uuid, myConn)
+
+	traceroute, err := zeroTraceInstance.Run()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	results := TracerouteResults{
 		UUID:      uuid,
 		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),

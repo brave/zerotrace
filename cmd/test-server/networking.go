@@ -1,19 +1,14 @@
 package main
 
 import (
-	"crypto/tls"
 	"errors"
-	"fmt"
 	"math"
 	"net"
-	"strconv"
 	"time"
 
 	"github.com/go-ping/ping"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
-	"golang.org/x/net/ipv4"
 )
 
 const (
@@ -25,6 +20,7 @@ const (
 	tracerouteHopTimeout = time.Second * 10
 	snaplen              = 65536
 	promisc              = true
+	ipversion            = 4
 )
 
 var (
@@ -108,146 +104,6 @@ func getMeanIcmpRTT(icmp []RtItem) float64 {
 		return 0.0
 	}
 	return avg
-}
-
-// start0trace reaches the underlying connection and sets up necessary pcap handles
-// and implements the 0trace method of sending TTL-limited probes on an existing TCP connection
-func start0trace(uuid string, netConn net.Conn) map[int]HopRTT {
-	clientIPstr := netConn.RemoteAddr().String()
-	clientIP, clPort, _ := net.SplitHostPort(clientIPstr)
-	clientPort, _ := strconv.Atoi(clPort)
-
-	handle, err := pcap.OpenLive(deviceName, snaplen, promisc, time.Second)
-	if err != nil {
-		ErrLogger.Println("Handle error:", err)
-	}
-
-	if err = handle.SetBPFFilter(fmt.Sprintf("(tcp and port %d and host %s) or icmp", clientPort, clientIP)); err != nil {
-		ErrLogger.Fatal(err)
-	}
-	recvdHop := make(chan HopRTT)
-	traceroute := make(map[int]HopRTT)
-
-	tempConn := netConn.(*tls.Conn)
-	tcpConn := tempConn.NetConn()
-	dstIP := net.ParseIP(clientIP)
-	ipConn := ipv4.NewConn(tcpConn)
-
-	localSrcAddr := tcpConn.LocalAddr().String()
-	localSrcIP, _, _ := net.SplitHostPort(localSrcAddr)
-	// Fire go routine to start listening for packets on the handler before sending TTL limited probes
-	go recvPackets(uuid, handle, localSrcIP, clientIP, recvdHop)
-
-	// Send TTL limited probes and await response from channel that identifies the hop which sent the ICMP response
-	// Stop sending any more probes if connection errors out
-	for ttlValue := beginTTLValue; ttlValue <= MaxTTLHops; ttlValue++ {
-		sentString := stringToSend + strconv.Itoa(ttlValue)
-		sendError := sendTracePacket(tcpConn, ipConn, dstIP, clientPort, sentString, ttlValue)
-		if sendError != nil {
-			break
-		}
-		currTTLIndicator[uuid] = ttlValue
-		ticker := time.NewTicker(tracerouteHopTimeout)
-		defer ticker.Stop()
-		select {
-		case hopData := <-recvdHop:
-			traceroute[ttlValue] = hopData
-		case <-ticker.C:
-			ErrLogger.Println("Traceroute Hop Timeout at Hop ", ttlValue, ". Moving on to the next hop.")
-			var empty net.IP
-			traceroute[ttlValue] = HopRTT{empty, 0}
-			continue
-		}
-		if traceroute[ttlValue].IP.String() == clientIP {
-			break
-		}
-	}
-	return traceroute
-}
-
-// sendTracePacket sends the TTL limited probe on the tcpConn, and sets the ttlValue using ipConn.SetTTL, and return errors if any
-func sendTracePacket(tcpConn net.Conn, ipConn *ipv4.Conn, dstIP net.IP, clientPort int, sentString string, ttlValue int) error {
-	rawBytes := []byte(sentString)
-	localSrcAddr := tcpConn.LocalAddr().String()
-	localSrcIP, localSrcPortString, _ := net.SplitHostPort(localSrcAddr)
-	localSrcPort, _ := strconv.Atoi(localSrcPortString)
-
-	ipLayer := &layers.IPv4{
-		Protocol: layers.IPProtocolTCP,
-		Version:  4,
-		SrcIP:    net.ParseIP(localSrcIP),
-		DstIP:    dstIP,
-	}
-	tcpLayer := &layers.TCP{
-		SrcPort: layers.TCPPort(int(localSrcPort)),
-		DstPort: layers.TCPPort(clientPort),
-		PSH:     true,
-		ACK:     true,
-	}
-	_ = tcpLayer.SetNetworkLayerForChecksum(ipLayer)
-
-	// Create the packet with the layers
-	buffer = gopacket.NewSerializeBuffer()
-
-	serializeErr := gopacket.SerializeLayers(buffer, options,
-		tcpLayer,
-		gopacket.Payload(rawBytes),
-	)
-	if serializeErr != nil {
-		ErrLogger.Println("Send Packet Error: Serialize: ", serializeErr)
-		return serializeErr
-	}
-
-	ttlErr := ipConn.SetTTL(int(ttlValue))
-	if ttlErr != nil {
-		ErrLogger.Println("Send Packet Error: Setting ttl: ", ttlErr)
-		return ttlErr
-	}
-
-	outgoingPacket := buffer.Bytes()
-	if _, err := tcpConn.Write(outgoingPacket); err != nil {
-		ErrLogger.Println("Send Packet Error writing to connection: ", err)
-		return err
-	}
-	ErrLogger.Println("Sent ", ttlValue, " packet")
-	return nil
-}
-
-// recvPackets listens on the provided pcap handler for packets sent, processes TCP and ICMP packets differently
-func recvPackets(uuid string, handle *pcap.Handle, serverIP string, clientIP string, hops chan HopRTT) {
-	var ipIdHop = make(map[int][]SentPacketData)
-	packetStream := gopacket.NewPacketSource(handle, handle.LinkType())
-	var counter int
-	timerPerHopPerUUID[uuid] = time.Now().UTC()
-
-	for packet := range packetStream.Packets() {
-		currTTL := currTTLIndicator[uuid]
-		if packet == nil {
-			continue
-		}
-		ipLayer := packet.Layer(layers.LayerTypeIPv4)
-		tcpLayer := packet.Layer(layers.LayerTypeTCP)
-		icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
-
-		if ipLayer != nil {
-			// To identify the TCP packet that we have sent
-			if tcpLayer != nil {
-				processTCPpkt(packet, serverIP, ipIdHop)
-			}
-			// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
-			if icmpLayer != nil && counter != currTTL {
-				clientFound, err := processICMPpkt(packet, clientIP, currTTL, &counter, ipIdHop, hops)
-				if err == icmpPktError {
-					continue
-				} else if clientFound {
-					return
-				}
-			}
-		}
-		if counter > MaxTTLHops {
-			return
-		}
-	}
 }
 
 // processICMPpkt takes the packet (known to contain an ICMP layer, and is not a duplicate for the TTL we have already evaluated)
