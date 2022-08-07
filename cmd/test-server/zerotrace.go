@@ -46,14 +46,14 @@ func (z *zeroTrace) Run() (map[int]HopRTT, error) {
 	traceroute := make(map[int]HopRTT)
 
 	// Fire go routine to start listening for packets on the handler before sending TTL limited probes
-	go z.recvPackets(z.UUID, pcapHdl, clientIP, recvdHopData)
+	go z.recvPackets(pcapHdl, clientIP, recvdHopData)
 
 	// Send TTL limited probes and await response from channel that identifies the hop which sent the ICMP response
 	// Stop sending any more probes if connection errors out
 	for ttlValue := beginTTLValue; ttlValue <= MaxTTLHops; ttlValue++ {
 		sendError := z.sendTracePacket(ttlValue)
 		if sendError != nil {
-			return nil, sendError
+			return traceroute, sendError
 		}
 		currTTLIndicator[z.UUID] = ttlValue
 		ticker := time.NewTicker(tracerouteHopTimeout)
@@ -85,7 +85,8 @@ func (z *zeroTrace) setupPcap() (*pcap.Handle, error) {
 }
 
 // recvPackets listens on the provided pcap handler for packets sent, processes TCP and ICMP packets differently
-func (z *zeroTrace) recvPackets(uuid string, pcapHdl *pcap.Handle, clientIP string, hops chan HopRTT) {
+func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, clientIP string, hops chan HopRTT) {
+	uuid := z.UUID
 	tempConn := z.Conn.(*tls.Conn)
 	tcpConn := tempConn.NetConn()
 
