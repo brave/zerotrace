@@ -12,27 +12,12 @@ import (
 )
 
 const (
-	ICMPCount            = 5
-	ICMPTimeout          = time.Second * 10
-	beginTTLValue        = 5
-	MaxTTLHops           = 32
-	stringToSend         = "test string tcp"
-	tracerouteHopTimeout = time.Second * 10
-	snaplen              = 65536
-	promisc              = true
-	ipversion            = 4
+	ICMPCount   = 5
+	ICMPTimeout = time.Second * 10
 )
 
 var (
-	buffer  gopacket.SerializeBuffer
-	options = gopacket.SerializeOptions{
-		ComputeChecksums: true,
-		FixLengths:       true,
-	}
-	timerPerHopPerUUID = make(map[string]time.Time)
-	deviceName         string
-	currTTLIndicator   = make(map[string]int)
-	icmpPktError       = errors.New("IP header unavailable")
+	icmpPktError = errors.New("IP header unavailable")
 )
 
 type RtItem struct {

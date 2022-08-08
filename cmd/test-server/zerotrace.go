@@ -13,22 +13,43 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+const (
+	beginTTLValue        = 5
+	MaxTTLHops           = 32
+	stringToSend         = "test string tcp"
+	tracerouteHopTimeout = time.Second * 10
+	snaplen              = 65536
+	promisc              = true
+	ipversion            = 4
+)
+
+var (
+	buffer  gopacket.SerializeBuffer
+	options = gopacket.SerializeOptions{
+		ComputeChecksums: true,
+		FixLengths:       true,
+	}
+	timerPerHopPerUUID = make(map[string]time.Time)
+	deviceName         string
+	currTTLIndicator   = make(map[string]int)
+)
+
 type zeroTrace struct {
-	Iface string
-	Conn  net.Conn
-	UUID  string
-	PcapHdl *pcap.Handle
-	ClientIP string
+	Iface      string
+	Conn       net.Conn
+	UUID       string
+	PcapHdl    *pcap.Handle
+	ClientIP   string
 	ClientPort int
 }
 
 // newZeroTrace instantiates and returns a new zeroTrace struct with the interface, net.Conn underlying connection, uuid and client IP and port data
 func newZeroTrace(iface string, conn net.Conn, uuid string, clientIP string, clientPort int) *zeroTrace {
 	return &zeroTrace{
-		Iface: iface,
-		Conn:  conn,
-		UUID:  uuid,
-		ClientIP: clientIP,
+		Iface:      iface,
+		Conn:       conn,
+		UUID:       uuid,
+		ClientIP:   clientIP,
 		ClientPort: clientPort,
 	}
 }
@@ -90,7 +111,6 @@ func (z *zeroTrace) setupPcapAndFilter() (*pcap.Handle, error) {
 
 // recvPackets listens on the provided pcap handler for packets sent, processes TCP and ICMP packets differently
 func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT) {
-	uuid := z.UUID
 	tempConn := z.Conn.(*tls.Conn)
 	tcpConn := tempConn.NetConn()
 
@@ -100,10 +120,10 @@ func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT) {
 	var ipIdHop = make(map[int][]SentPacketData)
 	packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
 	var counter int
-	timerPerHopPerUUID[uuid] = time.Now().UTC()
+	timerPerHopPerUUID[z.UUID] = time.Now().UTC()
 
 	for packet := range packetStream.Packets() {
-		currTTL := currTTLIndicator[uuid]
+		currTTL := currTTLIndicator[z.UUID]
 		if packet == nil {
 			continue
 		}

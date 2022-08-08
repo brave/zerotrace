@@ -86,7 +86,6 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	clientIP, clPort, _ := net.SplitHostPort(clientIPstr)
 	clientPort, _ := strconv.Atoi(clPort)
 
-
 	zeroTraceInstance := newZeroTrace(deviceName, myConn, uuid, clientIP, clientPort)
 
 	traceroute, err := zeroTraceInstance.Run()
