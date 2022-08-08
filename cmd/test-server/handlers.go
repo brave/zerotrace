@@ -34,9 +34,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
 
-	// Concurrently send ICMP pings for a <batchSizeLimit> number of IPs
-	var icmpResults []RtItem
-	icmpResults = append(icmpResults, IcmpPinger(clientIP))
+	icmpResults := IcmpPinger(clientIP)
 
 	// Combine all results
 	results := Results{
@@ -45,7 +43,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		//RFC3339 style UTC date time with added seconds information
 		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
 		IcmpPing:    icmpResults,
-		AvgIcmpStat: getMeanIcmpRTT(icmpResults),
+		AvgIcmpStat: icmpResults.AvgRtt,
 	}
 
 	jsObj, err := json.Marshal(results)

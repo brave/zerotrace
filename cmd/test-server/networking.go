@@ -26,7 +26,7 @@ type Results struct {
 	UUID        string
 	IPaddr      string
 	Timestamp   string
-	IcmpPing    []RtItem
+	IcmpPing    RtItem
 	AvgIcmpStat float64
 }
 

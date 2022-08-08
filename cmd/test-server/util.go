@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"math"
 	"time"
 
 	"github.com/google/gopacket"
@@ -20,24 +19,6 @@ func isValidUUID(u string) bool {
 // fmtTimeMs returns the value (time.Duration) in milliseconds, the inbuilt time.Milliseconds() function only returns an int64 value
 func fmtTimeMs(value time.Duration) float64 {
 	return (float64(value) / float64(time.Millisecond))
-}
-
-// getMeanIcmpRTT gets Avg RTT from all successful ICMP measurements, to display on webpage
-func getMeanIcmpRTT(icmp []RtItem) float64 {
-	var sum float64 = 0
-	var len float64 = 0
-	for _, x := range icmp {
-		if x.AvgRtt == 0 {
-			continue
-		}
-		sum += x.AvgRtt
-		len += 1
-	}
-	var avg float64 = sum / len
-	if math.IsNaN(avg) {
-		return 0.0
-	}
-	return avg
 }
 
 // getSentTimestampfromIPId traverses the []SentPacketData slice and returns the HopSentTime associated with the provided ipid, and error if any
