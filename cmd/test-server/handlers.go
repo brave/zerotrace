@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"path"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -81,7 +82,12 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 	myConn := c.UnderlyingConn()
-	zeroTraceInstance := newZeroTrace(deviceName, uuid, myConn)
+	clientIPstr := myConn.RemoteAddr().String()
+	clientIP, clPort, _ := net.SplitHostPort(clientIPstr)
+	clientPort, _ := strconv.Atoi(clPort)
+
+
+	zeroTraceInstance := newZeroTrace(deviceName, myConn, uuid, clientIP, clientPort)
 
 	traceroute, err := zeroTraceInstance.Run()
 	if err != nil {

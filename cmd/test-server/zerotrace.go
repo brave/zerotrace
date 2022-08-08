@@ -17,36 +17,36 @@ type zeroTrace struct {
 	Iface string
 	Conn  net.Conn
 	UUID  string
+	PcapHdl *pcap.Handle
+	ClientIP string
+	ClientPort int
 }
 
-func newZeroTrace(iface string, uuid string, conn net.Conn) *zeroTrace {
+// newZeroTrace instantiates and returns a new zeroTrace struct with the interface, net.Conn underlying connection, uuid and client IP and port data
+func newZeroTrace(iface string, conn net.Conn, uuid string, clientIP string, clientPort int) *zeroTrace {
 	return &zeroTrace{
 		Iface: iface,
 		Conn:  conn,
 		UUID:  uuid,
+		ClientIP: clientIP,
+		ClientPort: clientPort,
 	}
 }
 
 // Run reaches the underlying connection and sets up necessary pcap handles
 // and implements the 0trace method of sending TTL-limited probes on an existing TCP connection
 func (z *zeroTrace) Run() (map[int]HopRTT, error) {
-	pcapHdl, err := z.setupPcap()
+	var err error
+	z.PcapHdl, err = z.setupPcapAndFilter()
 	if err != nil {
 		return nil, err
 	}
 
-	clientIPstr := z.Conn.RemoteAddr().String()
-	clientIP, clPort, _ := net.SplitHostPort(clientIPstr)
-	clientPort, _ := strconv.Atoi(clPort)
-
-	if err = pcapHdl.SetBPFFilter(fmt.Sprintf("(tcp and port %d and host %s) or icmp", clientPort, clientIP)); err != nil {
-		ErrLogger.Fatal(err)
-	}
 	recvdHopData := make(chan HopRTT)
 	traceroute := make(map[int]HopRTT)
 
 	// Fire go routine to start listening for packets on the handler before sending TTL limited probes
-	go z.recvPackets(pcapHdl, clientIP, recvdHopData)
+	go z.recvPackets(z.PcapHdl, recvdHopData)
 
 	// Send TTL limited probes and await response from channel that identifies the hop which sent the ICMP response
 	// Stop sending any more probes if connection errors out
@@ -67,25 +67,29 @@ func (z *zeroTrace) Run() (map[int]HopRTT, error) {
 			traceroute[ttlValue] = HopRTT{empty, 0}
 			continue
 		}
-		if traceroute[ttlValue].IP.String() == clientIP {
+		if traceroute[ttlValue].IP.String() == z.ClientIP {
 			break
 		}
 	}
 	return traceroute, nil
 }
 
-// setupPcap sets up the pcap handle on the required interface and returns it
-func (z *zeroTrace) setupPcap() (*pcap.Handle, error) {
-	handle, err := pcap.OpenLive(z.Iface, snaplen, promisc, time.Second)
+// setupPcap sets up the pcap handle on the required interface, and applies the filter and returns it
+func (z *zeroTrace) setupPcapAndFilter() (*pcap.Handle, error) {
+	pcapHdl, err := pcap.OpenLive(z.Iface, snaplen, promisc, time.Second)
 	if err != nil {
 		ErrLogger.Println("Handle error:", err)
 		return nil, err
 	}
-	return handle, nil
+	if err = pcapHdl.SetBPFFilter(fmt.Sprintf("(tcp and port %d and host %s) or icmp", z.ClientPort, z.ClientIP)); err != nil {
+		ErrLogger.Fatal(err)
+		return nil, err
+	}
+	return pcapHdl, nil
 }
 
 // recvPackets listens on the provided pcap handler for packets sent, processes TCP and ICMP packets differently
-func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, clientIP string, hops chan HopRTT) {
+func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT) {
 	uuid := z.UUID
 	tempConn := z.Conn.(*tls.Conn)
 	tcpConn := tempConn.NetConn()
@@ -114,7 +118,7 @@ func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, clientIP string, hops chan
 			}
 			// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
 			if icmpLayer != nil && counter != currTTL {
-				clientFound, err := processICMPpkt(packet, clientIP, currTTL, &counter, ipIdHop, hops)
+				clientFound, err := processICMPpkt(packet, z.ClientIP, currTTL, &counter, ipIdHop, hops)
 				if err == icmpPktError {
 					continue
 				} else if clientFound {
@@ -130,11 +134,6 @@ func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, clientIP string, hops chan
 
 // sendTracePacket sets the ttlValue, sends the TTL limited probe on the tcpConn and return errors if any
 func (z *zeroTrace) sendTracePacket(ttlValue int) error {
-	// Get client IP and port
-	clientIPstr := z.Conn.RemoteAddr().String()
-	clientIP, clPort, _ := net.SplitHostPort(clientIPstr)
-	clientPort, _ := strconv.Atoi(clPort)
-
 	tempConn := z.Conn.(*tls.Conn)
 	tcpConn := tempConn.NetConn()
 	ipConn := ipv4.NewConn(tcpConn)
@@ -148,11 +147,11 @@ func (z *zeroTrace) sendTracePacket(ttlValue int) error {
 		Protocol: layers.IPProtocolTCP,
 		Version:  ipversion,
 		SrcIP:    net.ParseIP(localSrcIP),
-		DstIP:    net.ParseIP(clientIP),
+		DstIP:    net.ParseIP(z.ClientIP),
 	}
 	tcpLayer := &layers.TCP{
 		SrcPort: layers.TCPPort(localSrcPort),
-		DstPort: layers.TCPPort(clientPort),
+		DstPort: layers.TCPPort(z.ClientPort),
 		PSH:     true,
 		ACK:     true,
 	}
