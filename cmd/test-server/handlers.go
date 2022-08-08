@@ -89,7 +89,6 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	traceroute, err := zeroTraceInstance.Run()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 	results := TracerouteResults{
 		UUID:      uuid,
