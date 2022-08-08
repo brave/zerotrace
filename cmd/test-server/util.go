@@ -1,7 +1,12 @@
 package main
 
 import (
+	"errors"
+	"math"
 	"time"
+
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 
 	"github.com/google/uuid"
 )

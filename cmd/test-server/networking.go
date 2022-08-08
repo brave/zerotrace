@@ -1,14 +1,9 @@
 package main
 
 import (
-	"errors"
-	"math"
-	"net"
 	"time"
 
 	"github.com/go-ping/ping"
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
 )
 
 const (
