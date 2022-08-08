@@ -242,12 +242,12 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 	ipid := ipHeaderIcmp.Id
 	recvTimestamp := packet.Metadata().Timestamp
 	if currHop.String() == z.ClientIP {
-		hops <- z.extractTracerouteHopData(currTTL, currHop, ipid, recvTimestamp, true)
+		hops <- HopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, true)}
 		return true, nil
 	}
 	if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
 		if z.IPIdHop[currTTL] != nil && sliceContains(z.IPIdHop[currTTL], ipid) {
-			hops <- z.extractTracerouteHopData(currTTL, currHop, ipid, recvTimestamp, false)
+			hops <- HopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, false)}
 			*counter = currTTL
 		}
 	}
@@ -273,11 +273,11 @@ func (z *zeroTrace) processTCPpkt(packet gopacket.Packet, serverIP string) {
 	}
 }
 
-// extractTracerouteHopData obtains the time stamp for the TTL-limited packet which was sent for the "currTTL" value,
+// extractTracerouteHopRTT obtains the time stamp for the TTL-limited packet which was sent for the "currTTL" value,
 // and subtracts that from the recvTimestamp supplied to calculate RTT for the current hop
 // and returns the HopRTT object with the calculated RTT value.
 // logs the current TTL value if the client has already been reached
-func (z *zeroTrace) extractTracerouteHopData(currTTL int, currHop net.IP, ipid uint16, recvTimestamp time.Time, clientReached bool) HopRTT {
+func (z *zeroTrace) extractTracerouteHopRTT(currTTL int, ipid uint16, recvTimestamp time.Time, clientReached bool) float64 {
 	if clientReached {
 		ErrLogger.Println("Traceroute reached client (ICMP response) at hop: ", currTTL)
 	} else {
@@ -291,5 +291,5 @@ func (z *zeroTrace) extractTracerouteHopData(currTTL int, currHop net.IP, ipid u
 	} else {
 		hopRTTVal = recvTimestamp.Sub(sentTime)
 	}
-	return HopRTT{IP: currHop, RTT: fmtTimeMs(hopRTTVal)}
+	return fmtTimeMs(hopRTTVal)
 }
