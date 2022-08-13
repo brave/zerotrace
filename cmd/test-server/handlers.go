@@ -6,15 +6,10 @@ import (
 	"net"
 	"net/http"
 	"path"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-)
-
-var (
-	upgrader = websocket.Upgrader{}
 )
 
 // indexHandler serves the default index page with reasons for scanning IPs on this server and point of contact
@@ -71,7 +66,7 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 			uuid = v[0]
 		}
 	}
-
+	var upgrader = websocket.Upgrader{}
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		ErrLogger.Println("upgrade:", err)
@@ -80,11 +75,8 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 	myConn := c.UnderlyingConn()
-	clientIPstr := myConn.RemoteAddr().String()
-	clientIP, clPort, _ := net.SplitHostPort(clientIPstr)
-	clientPort, _ := strconv.Atoi(clPort)
 
-	zeroTraceInstance := newZeroTrace(deviceName, myConn, uuid, clientIP, clientPort)
+	zeroTraceInstance := newZeroTrace(deviceName, myConn, uuid)
 
 	traceroute, err := zeroTraceInstance.Run()
 	if err != nil {
@@ -109,6 +101,7 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	if checkHTTPParams(w, r, "/echo") {
 		return
 	}
+	var upgrader = websocket.Upgrader{}
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		ErrLogger.Println("upgrade:", err)

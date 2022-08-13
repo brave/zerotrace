@@ -16,7 +16,7 @@ import (
 
 const (
 	beginTTLValue        = 5
-	MaxTTLHops           = 32
+	maxTTLHops           = 32
 	stringToSend         = "test string tcp"
 	tracerouteHopTimeout = time.Second * 10
 	snaplen              = 65536
@@ -62,7 +62,11 @@ type TracerouteResults struct {
 }
 
 // newZeroTrace instantiates and returns a new zeroTrace struct with the interface, net.Conn underlying connection, uuid and client IP and port data
-func newZeroTrace(iface string, conn net.Conn, uuid string, clientIP string, clientPort int) *zeroTrace {
+func newZeroTrace(iface string, conn net.Conn, uuid string) *zeroTrace {
+	clientIPstr := conn.RemoteAddr().String()
+	clientIP, clPort, _ := net.SplitHostPort(clientIPstr)
+	clientPort, _ := strconv.Atoi(clPort)
+
 	return &zeroTrace{
 		Iface:      iface,
 		Conn:       conn,
@@ -89,7 +93,7 @@ func (z *zeroTrace) Run() (map[int]HopRTT, error) {
 
 	// Send TTL limited probes and await response from channel that identifies the hop which sent the ICMP response
 	// Stop sending any more probes if connection errors out
-	for ttlValue := beginTTLValue; ttlValue <= MaxTTLHops; ttlValue++ {
+	for ttlValue := beginTTLValue; ttlValue <= maxTTLHops; ttlValue++ {
 		sendError := z.sendTracePacket(ttlValue)
 		if sendError != nil {
 			return traceroute, sendError
@@ -163,7 +167,7 @@ func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT) {
 				}
 			}
 		}
-		if counter > MaxTTLHops {
+		if counter > maxTTLHops {
 			return
 		}
 	}
