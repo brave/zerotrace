@@ -106,11 +106,13 @@ func (z *zeroTrace) Run() (map[int]HopRTT, error) {
 	}
 
 	recvdHopChan := make(chan HopRTT)
-
+	quit := make(chan bool)
 	// Fire go routine to start listening for packets on the handler before sending TTL limited probes
-	go z.recvPackets(z.PcapHdl, recvdHopChan)
+	go z.recvPackets(z.PcapHdl, recvdHopChan, quit)
 
-	return z.sendTTLIncrementingProbes(recvdHopChan)
+	traceroute, err := z.sendTTLIncrementingProbes(recvdHopChan)
+	quit <- true
+	return traceroute, err
 }
 
 // setupPcap sets up the pcap handle on the required interface, and applies the filter and returns it
@@ -127,44 +129,51 @@ func (z *zeroTrace) setupPcapAndFilter() (*pcap.Handle, error) {
 	return pcapHdl, nil
 }
 
-// recvPackets listens on the provided pcap handler for packets sent, processes TCP and ICMP packets differently
-func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT) {
-	tempConn := z.Conn.(*tls.Conn)
-	tcpConn := tempConn.NetConn()
+// recvPackets listens on the provided pcap handler for packets sent, processes TCP and ICMP packets differently, and aborts if signalled
+func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT, quit chan bool) {
+	for {
+		select {
+		case <-quit:
+			return
+		default:
+			tempConn := z.Conn.(*tls.Conn)
+			tcpConn := tempConn.NetConn()
 
-	localSrcAddr := tcpConn.LocalAddr().String()
-	serverIP, _, _ := net.SplitHostPort(localSrcAddr)
+			localSrcAddr := tcpConn.LocalAddr().String()
+			serverIP, _, _ := net.SplitHostPort(localSrcAddr)
 
-	z.SentPktsIPId = make(map[int][]SentPacketData)
-	packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
-	var counter int
+			z.SentPktsIPId = make(map[int][]SentPacketData)
+			packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
+			var counter int
 
-	for packet := range packetStream.Packets() {
-		currTTL := z.CurrTTLIndicator
-		if packet == nil {
-			continue
-		}
-		ipLayer := packet.Layer(layers.LayerTypeIPv4)
-		tcpLayer := packet.Layer(layers.LayerTypeTCP)
-		icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
-
-		if ipLayer != nil {
-			// To identify the TCP packet that we have sent
-			if tcpLayer != nil {
-				z.processTCPpkt(packet, serverIP)
-			}
-			// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
-			if icmpLayer != nil && counter != currTTL {
-				clientFound, err := z.processICMPpkt(packet, currTTL, &counter, hops)
-				if err == icmpPktError {
+			for packet := range packetStream.Packets() {
+				currTTL := z.CurrTTLIndicator
+				if packet == nil {
 					continue
-				} else if clientFound {
+				}
+				ipLayer := packet.Layer(layers.LayerTypeIPv4)
+				tcpLayer := packet.Layer(layers.LayerTypeTCP)
+				icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
+
+				if ipLayer != nil {
+					// To identify the TCP packet that we have sent
+					if tcpLayer != nil {
+						z.processTCPpkt(packet, serverIP)
+					}
+					// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
+					if icmpLayer != nil && counter != currTTL {
+						clientFound, err := z.processICMPpkt(packet, currTTL, &counter, hops)
+						if err == icmpPktError {
+							continue
+						} else if clientFound {
+							return
+						}
+					}
+				}
+				if counter > maxTTLHops {
 					return
 				}
 			}
-		}
-		if counter > maxTTLHops {
-			return
 		}
 	}
 }
