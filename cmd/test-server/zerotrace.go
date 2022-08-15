@@ -69,23 +69,9 @@ func newZeroTrace(iface string, conn net.Conn) *zeroTrace {
 	}
 }
 
-// Run reaches the underlying connection and sets up necessary pcap handles
-// and implements the 0trace method of sending TTL-limited probes on an existing TCP connection
-func (z *zeroTrace) Run() (map[int]HopRTT, error) {
-	var err error
-	z.PcapHdl, err = z.setupPcapAndFilter()
-	if err != nil {
-		return nil, err
-	}
-
-	recvdHopData := make(chan HopRTT)
+// sendTTLIncrementingProbes sends probes of incrementing TTL, await response from channel that identifies the hop which sent the ICMP response and stops sending any more probes if connection errors out
+func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan HopRTT) (map[int]HopRTT, error) {
 	traceroute := make(map[int]HopRTT)
-
-	// Fire go routine to start listening for packets on the handler before sending TTL limited probes
-	go z.recvPackets(z.PcapHdl, recvdHopData)
-
-	// Send TTL limited probes and await response from channel that identifies the hop which sent the ICMP response
-	// Stop sending any more probes if connection errors out
 	for ttlValue := beginTTLValue; ttlValue <= maxTTLHops; ttlValue++ {
 		sendError := z.sendTracePacket(ttlValue)
 		if sendError != nil {
@@ -108,6 +94,23 @@ func (z *zeroTrace) Run() (map[int]HopRTT, error) {
 		}
 	}
 	return traceroute, nil
+}
+
+// Run reaches the underlying connection and sets up necessary pcap handles
+// and implements the 0trace method of sending TTL-limited probes on an existing TCP connection
+func (z *zeroTrace) Run() (map[int]HopRTT, error) {
+	var err error
+	z.PcapHdl, err = z.setupPcapAndFilter()
+	if err != nil {
+		return nil, err
+	}
+
+	recvdHopChan := make(chan HopRTT)
+
+	// Fire go routine to start listening for packets on the handler before sending TTL limited probes
+	go z.recvPackets(z.PcapHdl, recvdHopChan)
+
+	return z.sendTTLIncrementingProbes(recvdHopChan)
 }
 
 // setupPcap sets up the pcap handle on the required interface, and applies the filter and returns it
