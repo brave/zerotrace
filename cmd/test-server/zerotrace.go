@@ -42,7 +42,6 @@ type HopRTT struct {
 type zeroTrace struct {
 	Iface            string
 	Conn             net.Conn
-	UUID             string
 	PcapHdl          *pcap.Handle
 	ClientIP         string
 	ClientPort       int
@@ -56,8 +55,8 @@ type TracerouteResults struct {
 	HopData   map[int]HopRTT
 }
 
-// newZeroTrace instantiates and returns a new zeroTrace struct with the interface, net.Conn underlying connection, uuid and client IP and port data
-func newZeroTrace(iface string, conn net.Conn, uuid string) *zeroTrace {
+// newZeroTrace instantiates and returns a new zeroTrace struct with the interface, net.Conn underlying connection, client IP and port data
+func newZeroTrace(iface string, conn net.Conn) *zeroTrace {
 	clientIPstr := conn.RemoteAddr().String()
 	clientIP, clPort, _ := net.SplitHostPort(clientIPstr)
 	clientPort, _ := strconv.Atoi(clPort)
@@ -65,7 +64,6 @@ func newZeroTrace(iface string, conn net.Conn, uuid string) *zeroTrace {
 	return &zeroTrace{
 		Iface:      iface,
 		Conn:       conn,
-		UUID:       uuid,
 		ClientIP:   clientIP,
 		ClientPort: clientPort,
 	}
