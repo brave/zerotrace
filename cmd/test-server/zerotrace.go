@@ -131,51 +131,50 @@ func (z *zeroTrace) setupPcapAndFilter() (*pcap.Handle, error) {
 
 // recvPackets listens on the provided pcap handler for packets sent, processes TCP and ICMP packets differently, and aborts if signalled
 func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT, quit chan bool) {
-	for {
+	tempConn := z.Conn.(*tls.Conn)
+	tcpConn := tempConn.NetConn()
+
+	localSrcAddr := tcpConn.LocalAddr().String()
+	serverIP, _, _ := net.SplitHostPort(localSrcAddr)
+
+	z.SentPktsIPId = make(map[int][]SentPacketData)
+	packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
+	var counter int
+
+	for packet := range packetStream.Packets() {
 		select {
 		case <-quit:
 			return
 		default:
-			tempConn := z.Conn.(*tls.Conn)
-			tcpConn := tempConn.NetConn()
+			currTTL := z.CurrTTLIndicator
+			if packet == nil {
+				continue
+			}
+			ipLayer := packet.Layer(layers.LayerTypeIPv4)
+			tcpLayer := packet.Layer(layers.LayerTypeTCP)
+			icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
 
-			localSrcAddr := tcpConn.LocalAddr().String()
-			serverIP, _, _ := net.SplitHostPort(localSrcAddr)
-
-			z.SentPktsIPId = make(map[int][]SentPacketData)
-			packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
-			var counter int
-
-			for packet := range packetStream.Packets() {
-				currTTL := z.CurrTTLIndicator
-				if packet == nil {
-					continue
+			if ipLayer != nil {
+				// To identify the TCP packet that we have sent
+				if tcpLayer != nil {
+					z.processTCPpkt(packet, serverIP)
 				}
-				ipLayer := packet.Layer(layers.LayerTypeIPv4)
-				tcpLayer := packet.Layer(layers.LayerTypeTCP)
-				icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
-
-				if ipLayer != nil {
-					// To identify the TCP packet that we have sent
-					if tcpLayer != nil {
-						z.processTCPpkt(packet, serverIP)
-					}
-					// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
-					if icmpLayer != nil && counter != currTTL {
-						clientFound, err := z.processICMPpkt(packet, currTTL, &counter, hops)
-						if err == icmpPktError {
-							continue
-						} else if clientFound {
-							return
-						}
+				// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
+				if icmpLayer != nil && counter != currTTL {
+					clientFound, err := z.processICMPpkt(packet, currTTL, &counter, hops)
+					if err == icmpPktError {
+						continue
+					} else if clientFound {
+						return
 					}
 				}
-				if counter > maxTTLHops {
-					return
-				}
+			}
+			if counter > maxTTLHops {
+				return
 			}
 		}
 	}
+
 }
 
 // sendTracePacket sets the ttlValue, sends the TTL limited probe on the tcpConn and return errors if any
