@@ -119,11 +119,9 @@ func (z *zeroTrace) Run() (map[int]HopRTT, error) {
 func (z *zeroTrace) setupPcapAndFilter() (*pcap.Handle, error) {
 	pcapHdl, err := pcap.OpenLive(z.Iface, snaplen, promisc, time.Second)
 	if err != nil {
-		ErrLogger.Println("Handle error:", err)
 		return nil, err
 	}
 	if err = pcapHdl.SetBPFFilter(fmt.Sprintf("(tcp and port %d and host %s) or icmp", z.ClientPort, z.ClientIP)); err != nil {
-		ErrLogger.Fatal(err)
 		return nil, err
 	}
 	return pcapHdl, nil
