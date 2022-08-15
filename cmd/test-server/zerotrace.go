@@ -17,7 +17,6 @@ import (
 const (
 	beginTTLValue        = 5
 	maxTTLHops           = 32
-	stringToSend         = "test string tcp"
 	tracerouteHopTimeout = time.Second * 10
 	snaplen              = 65536
 	promisc              = true
@@ -25,15 +24,11 @@ const (
 )
 
 var (
-	buffer  gopacket.SerializeBuffer
-	options = gopacket.SerializeOptions{
-		ComputeChecksums: true,
-		FixLengths:       true,
-	}
 	deviceName   string
 	icmpPktError = errors.New("IP header unavailable")
 )
 
+// SentPacketData struct keeps track of the IP ID value and Sent time for each TCP packet sent
 type SentPacketData struct {
 	HopIPId     uint16
 	HopSentTime time.Time
@@ -51,7 +46,7 @@ type zeroTrace struct {
 	PcapHdl          *pcap.Handle
 	ClientIP         string
 	ClientPort       int
-	IPIdHop          map[int][]SentPacketData
+	SentPktsIPId     map[int][]SentPacketData
 	CurrTTLIndicator int
 }
 
@@ -139,7 +134,7 @@ func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT) {
 	localSrcAddr := tcpConn.LocalAddr().String()
 	serverIP, _, _ := net.SplitHostPort(localSrcAddr)
 
-	z.IPIdHop = make(map[int][]SentPacketData)
+	z.SentPktsIPId = make(map[int][]SentPacketData)
 	packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
 	var counter int
 
@@ -179,7 +174,7 @@ func (z *zeroTrace) sendTracePacket(ttlValue int) error {
 	tcpConn := tempConn.NetConn()
 	ipConn := ipv4.NewConn(tcpConn)
 
-	rawBytes := []byte(stringToSend)
+	rawBytesPayload := []byte("test string tcp")
 	localSrcAddr := tcpConn.LocalAddr().String()
 	localSrcIP, localSrcPortString, _ := net.SplitHostPort(localSrcAddr)
 	localSrcPort, _ := strconv.Atoi(localSrcPortString)
@@ -199,11 +194,15 @@ func (z *zeroTrace) sendTracePacket(ttlValue int) error {
 	_ = tcpLayer.SetNetworkLayerForChecksum(ipLayer)
 
 	// Create the packet with the layers
-	buffer = gopacket.NewSerializeBuffer()
+	buffer := gopacket.NewSerializeBuffer()
+	options := gopacket.SerializeOptions{
+		ComputeChecksums: true,
+		FixLengths:       true,
+	}
 
 	serializeErr := gopacket.SerializeLayers(buffer, options,
 		tcpLayer,
-		gopacket.Payload(rawBytes),
+		gopacket.Payload(rawBytesPayload),
 	)
 	if serializeErr != nil {
 		ErrLogger.Println("Send Packet Error: Serialize: ", serializeErr)
@@ -228,7 +227,7 @@ func (z *zeroTrace) sendTracePacket(ttlValue int) error {
 // processICMPpkt takes the packet (known to contain an ICMP layer, and is not a duplicate for the TTL we have already evaluated)
 // it extracts the received timestamp, and IP Id from the IP header of the original packet from the ICMP error packet
 // it extracts the Hop RTT data, and passes the extracted data to the hops channel if:
-// the packet contains the TTL Exceeded error code, and the ipIdHop map contains the found IP Id at the current TTL,
+// the packet contains the TTL Exceeded error code, and the SentPktsIPId map contains the found IP Id at the current TTL,
 // or the client IP has been reached
 // it retuns true if the client has been reached, and returns false if otherwise, and error if any
 func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter *int, hops chan HopRTT) (bool, error) {
@@ -250,7 +249,7 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 		return true, nil
 	}
 	if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
-		if z.IPIdHop[currTTL] != nil && sliceContains(z.IPIdHop[currTTL], ipid) {
+		if z.SentPktsIPId[currTTL] != nil && sliceContains(z.SentPktsIPId[currTTL], ipid) {
 			hops <- HopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, false)}
 			*counter = currTTL
 		}
@@ -259,7 +258,7 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 }
 
 // processTCPpkt processes packet (known to contain a TCP layer)
-// as long the packet's srcIP matches the serverIP, it updates the z.IPIdHop map with the TTL and IPID seen on the packet
+// as long the packet's srcIP matches the serverIP, it updates the z.SentPktsIPId map with the TTL and IPID seen on the packet
 // In case of retransmissions we might see repeated sequence numbers on packets, although the underlying TTL set (using setTTL) has changed
 // However, IP Id will remain unique per packet and can be used to correlate received packets
 // (RFC 1812 says _at least_ IP header must be returned along with the packet)
@@ -271,8 +270,8 @@ func (z *zeroTrace) processTCPpkt(packet gopacket.Packet, serverIP string) {
 	if currHop == serverIP {
 		sentTime := packet.Metadata().Timestamp
 		currIPId := ipl.Id
-		if !sliceContains(z.IPIdHop[packetTTL], currIPId) {
-			z.IPIdHop[packetTTL] = append(z.IPIdHop[packetTTL], SentPacketData{HopIPId: currIPId, HopSentTime: sentTime})
+		if !sliceContains(z.SentPktsIPId[packetTTL], currIPId) {
+			z.SentPktsIPId[packetTTL] = append(z.SentPktsIPId[packetTTL], SentPacketData{HopIPId: currIPId, HopSentTime: sentTime})
 		}
 	}
 }
@@ -288,7 +287,7 @@ func (z *zeroTrace) extractTracerouteHopRTT(currTTL int, ipid uint16, recvTimest
 		ErrLogger.Println("Received packet ipid: ", ipid, " TTL: ", currTTL)
 	}
 	var hopRTTVal time.Duration
-	sentTime, err := getSentTimestampfromIPId(z.IPIdHop[currTTL], ipid)
+	sentTime, err := getSentTimestampfromIPId(z.SentPktsIPId[currTTL], ipid)
 	if err != nil {
 		ErrLogger.Println("Error getting timestamp from sent pkt: ", err)
 		hopRTTVal = 0
