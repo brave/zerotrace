@@ -73,9 +73,9 @@ func newZeroTrace(iface string, conn net.Conn) *zeroTrace {
 func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan HopRTT) (map[int]HopRTT, error) {
 	traceroute := make(map[int]HopRTT)
 	for ttlValue := beginTTLValue; ttlValue <= maxTTLHops; ttlValue++ {
-		sendError := z.sendTracePacket(ttlValue)
-		if sendError != nil {
-			return traceroute, sendError
+		if err := z.sendTracePacket(ttlValue); err != nil {
+			ErrLogger.Println("Send Trace Packet Error: ", err)
+			return traceroute, err
 		}
 		z.CurrTTLIndicator = ttlValue
 		ticker := time.NewTicker(tracerouteHopTimeout)
@@ -100,8 +100,7 @@ func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan HopRTT) (map[int
 // and implements the 0trace method of sending TTL-limited probes on an existing TCP connection
 func (z *zeroTrace) Run() (map[int]HopRTT, error) {
 	var err error
-	z.PcapHdl, err = z.setupPcapAndFilter()
-	if err != nil {
+	if z.PcapHdl, err = z.setupPcapAndFilter(); err != nil {
 		return nil, err
 	}
 
@@ -207,24 +206,16 @@ func (z *zeroTrace) sendTracePacket(ttlValue int) error {
 		FixLengths:       true,
 	}
 
-	serializeErr := gopacket.SerializeLayers(buffer, options,
-		tcpLayer,
-		gopacket.Payload(rawBytesPayload),
-	)
-	if serializeErr != nil {
-		ErrLogger.Println("Send Packet Error: Serialize: ", serializeErr)
-		return serializeErr
+	if err := gopacket.SerializeLayers(buffer, options, tcpLayer, gopacket.Payload(rawBytesPayload)); err != nil {
+		return err
 	}
 
-	ttlErr := ipConn.SetTTL(int(ttlValue))
-	if ttlErr != nil {
-		ErrLogger.Println("Send Packet Error: Setting ttl: ", ttlErr)
-		return ttlErr
+	if err := ipConn.SetTTL(int(ttlValue)); err != nil {
+		return err
 	}
 
 	outgoingPacket := buffer.Bytes()
 	if _, err := tcpConn.Write(outgoingPacket); err != nil {
-		ErrLogger.Println("Send Packet Error writing to connection: ", err)
 		return err
 	}
 	ErrLogger.Println("Sent ", ttlValue, " packet")
