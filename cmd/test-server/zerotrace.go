@@ -143,7 +143,7 @@ func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT, quit cha
 		select {
 		case <-quit:
 			return
-		case packet := <- packetStream.Packets():
+		case packet := <-packetStream.Packets():
 			currTTL := z.CurrTTLIndicator
 			if packet == nil {
 				continue
@@ -226,7 +226,7 @@ func (z *zeroTrace) sendTracePacket(ttlValue int) error {
 // it extracts the Hop RTT data, and passes the extracted data to the hops channel if:
 // the packet contains the TTL Exceeded error code, and the SentPktsIPId map contains the found IP Id at the current TTL,
 // or errors if any
-func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter *int, hops chan HopRTT) (error) {
+func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter *int, hops chan HopRTT) error {
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
 	ipl, _ := ipLayer.(*layers.IPv4)
 	currHop := ipl.SrcIP
@@ -238,6 +238,11 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 		return icmpPktError
 	}
 
+	// We obtain the IPID from the IP header of the original packet that is present in the ICMP Error packet, and compare it to the IPID of the packet we sent with a particular TTL value
+	// Note: In the server side when sending a packet, if the "Don't Fragment" flag is set, some (server) OSes assign 0x0000 as the IP ID
+	// This does not break the logic here much, since we await the ICMP error response for each TTL (or move on after tracerouteHopTimeout)
+	// before moving on to the next one. However, it can lead to confusing debug messages (from extractTracerouteHopRTT(...))
+	// FYI: Currently (8/2022), the server is run on a linux AWS machine running Ubuntu 22.04 LTS and the IPID for a particular flow is monotonically increasing/incrementing
 	ipid := ipHeaderIcmp.Id
 	recvTimestamp := packet.Metadata().Timestamp
 	if currHop.String() == z.ClientIP {
