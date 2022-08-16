@@ -143,7 +143,7 @@ func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT, quit cha
 		select {
 		case <-quit:
 			return
-		case packet := <- packetStream.Packets():
+		case packet := <-packetStream.Packets():
 			currTTL := z.CurrTTLIndicator
 			if packet == nil {
 				continue
@@ -226,7 +226,7 @@ func (z *zeroTrace) sendTracePacket(ttlValue int) error {
 // it extracts the Hop RTT data, and passes the extracted data to the hops channel if:
 // the packet contains the TTL Exceeded error code, and the SentPktsIPId map contains the found IP Id at the current TTL,
 // or errors if any
-func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter *int, hops chan HopRTT) (error) {
+func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter *int, hops chan HopRTT) error {
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
 	ipl, _ := ipLayer.(*layers.IPv4)
 	currHop := ipl.SrcIP
