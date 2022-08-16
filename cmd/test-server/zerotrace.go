@@ -90,6 +90,7 @@ func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan HopRTT) (map[int
 			continue
 		}
 		if traceroute[ttlValue].IP.String() == z.ClientIP {
+			// The client has been reached and RTT has been recorded, so we can break
 			break
 		}
 	}
@@ -138,11 +139,11 @@ func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT, quit cha
 	packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
 	var counter int
 
-	for packet := range packetStream.Packets() {
+	for {
 		select {
 		case <-quit:
 			return
-		default:
+		case packet := <- packetStream.Packets():
 			currTTL := z.CurrTTLIndicator
 			if packet == nil {
 				continue
@@ -158,11 +159,9 @@ func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT, quit cha
 				}
 				// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
 				if icmpLayer != nil && counter != currTTL {
-					clientFound, err := z.processICMPpkt(packet, currTTL, &counter, hops)
+					err := z.processICMPpkt(packet, currTTL, &counter, hops)
 					if err == icmpPktError {
 						continue
-					} else if clientFound {
-						return
 					}
 				}
 			}
@@ -226,9 +225,8 @@ func (z *zeroTrace) sendTracePacket(ttlValue int) error {
 // it extracts the received timestamp, and IP Id from the IP header of the original packet from the ICMP error packet
 // it extracts the Hop RTT data, and passes the extracted data to the hops channel if:
 // the packet contains the TTL Exceeded error code, and the SentPktsIPId map contains the found IP Id at the current TTL,
-// or the client IP has been reached
-// it retuns true if the client has been reached, and returns false if otherwise, and error if any
-func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter *int, hops chan HopRTT) (bool, error) {
+// or errors if any
+func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter *int, hops chan HopRTT) (error) {
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
 	ipl, _ := ipLayer.(*layers.IPv4)
 	currHop := ipl.SrcIP
@@ -237,14 +235,14 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 	icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
 	ipHeaderIcmp, err := getHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
 	if err != nil {
-		return false, icmpPktError
+		return icmpPktError
 	}
 
 	ipid := ipHeaderIcmp.Id
 	recvTimestamp := packet.Metadata().Timestamp
 	if currHop.String() == z.ClientIP {
 		hops <- HopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, true)}
-		return true, nil
+		return nil
 	}
 	if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
 		if z.SentPktsIPId[currTTL] != nil && sliceContains(z.SentPktsIPId[currTTL], ipid) {
@@ -252,7 +250,7 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 			*counter = currTTL
 		}
 	}
-	return false, nil
+	return nil
 }
 
 // processTCPpkt processes packet (known to contain a TCP layer)
