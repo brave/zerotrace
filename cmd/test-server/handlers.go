@@ -81,8 +81,11 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var uuid string
 	for k, v := range r.URL.Query() {
-		if k == "uuid" {
+		if k == "uuid" && isValidUUID(v[0]) {
 			uuid = v[0]
+		} else {
+			http.Error(w, "Invalid UUID", http.StatusInternalServerError)
+			return
 		}
 	}
 
