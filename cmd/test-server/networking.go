@@ -11,6 +11,13 @@ const (
 	icmpTimeout = time.Second * 10
 )
 
+type FormDetails struct {
+	UUID      string
+	Timestamp string
+	Contact   string
+	ExpType   string
+}
+
 type PingMsmt struct {
 	IP        string
 	PktSent   int

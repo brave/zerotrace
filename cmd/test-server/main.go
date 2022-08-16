@@ -23,7 +23,7 @@ func checkHTTPParams(w http.ResponseWriter, r *http.Request, pathstring string) 
 		http.NotFound(w, r)
 		return true
 	}
-	if r.Method != "GET" {
+	if r.Method != "GET" && pathstring != "/measure" {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return true
 	}
@@ -61,6 +61,8 @@ func main() {
 	http.HandleFunc("/ping", pingHandler)
 	http.HandleFunc("/echo", echoHandler)
 	http.HandleFunc("/trace", traceHandler)
+	http.HandleFunc("/measure", measureHandler)
+
 	go func() {
 		if err := http.ListenAndServe(":80", http.HandlerFunc(redirectToTLS)); err != nil {
 			log.Fatalf("ListenAndServe port 80 error: %v", err)

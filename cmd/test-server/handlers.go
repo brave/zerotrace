@@ -2,15 +2,68 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"html/template"
 	"net"
 	"net/http"
 	"path"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
+
+func serveFormTemplate(w http.ResponseWriter) {
+	var WebTemplate, _ = template.ParseFiles(path.Join(directoryPath, "measure.html"))
+	if err := WebTemplate.Execute(w, nil); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func validateForm(w http.ResponseWriter, r *http.Request) (FormDetails, error) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return FormDetails{}, nil
+	}
+	if m, _ := regexp.MatchString(`^\w+@brave\.com$`, r.FormValue("email")); !m {
+		return FormDetails{}, errors.New("Invalid Input")
+	}
+	if r.FormValue("exp_type") != "vpn" && r.FormValue("exp_type") != "direct" {
+		return FormDetails{}, errors.New("Invalid Input")
+	}
+	details := FormDetails{
+		UUID:      uuid.NewString(),
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+		Contact:   r.FormValue("email"),
+		ExpType:   r.FormValue("exp_type"),
+	}
+	return details, nil
+}
+
+func measureHandler(w http.ResponseWriter, r *http.Request) {
+	if checkHTTPParams(w, r, "/measure") {
+		return
+	}
+	if r.Method == "GET" {
+		serveFormTemplate(w)
+	} else {
+		details, err := validateForm(w, r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		jsObj, err := json.Marshal(details)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		resultString := string(jsObj)
+		InfoLogger.Println(resultString)
+		http.Redirect(w, r, "/ping?uuid="+details.UUID, 302)
+	}
+}
 
 // indexHandler serves the default index page with reasons for scanning IPs on this server and point of contact
 func indexHandler(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +79,13 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	if checkHTTPParams(w, r, "/ping") {
 		return
 	}
+	var uuid string
+	for k, v := range r.URL.Query() {
+		if k == "uuid" {
+			uuid = v[0]
+		}
+	}
+
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
 
@@ -33,7 +93,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Combine all results
 	results := Results{
-		UUID:   uuid.NewString(),
+		UUID:   uuid,
 		IPaddr: clientIP,
 		//RFC3339 style UTC date time with added seconds information
 		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"),

@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset = "utf-8">
+    <title>Calculate Latency Using WebSockets</title>
+    <style>
+      p {
+        display: inline-block;
+      }
+    </style>
+
+  </head>
+
+  <body>
+    <h1>Experiment Details</h1>
+    <form method="POST">
+        <label>Brave Username (username@brave.com):</label><br />
+        <input type="text" placeholder="username@brave.com" name="email"><br />
+        <input type="radio" id="exp_type" name="exp_type" value="direct">
+        <label for="direct">Direct Connection</label><br>
+        <input type="radio" id="exp_type" name="exp_type" value="vpn">
+        <label for="vpn">VPN</label><br>
+        <input type="submit">
+    </form>
+  </body>
+</html>
