@@ -1,11 +1,32 @@
 <!doctype html>
 <html>
   <head>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <meta charset = "utf-8">
     <title>Calculate Latency Using WebSockets</title>
     <style>
-      p {
+      .buttonload {
+        background-color: #cec1e7;
+        border: none; /* Remove borders */
+        color: black; /* White text */
+        padding: 12px 24px; /* Some padding */
+        font-size: 16px; /* Set a font-size */
+      }
+      .fa {
+        margin-left: -12px;
+        margin-right: 8px;
+      }
+      form {
+        margin-left: 20px;
+      }
+      h1 {
+        margin-top: 20px;
+        margin-left: 20px;
+      }
+      input {
+        margin: 10px;
         display: inline-block;
+
       }
     </style>
 
@@ -14,13 +35,30 @@
   <body>
     <h1>Experiment Details</h1>
     <form method="POST">
-        <label>Brave Username (username@brave.com):</label><br />
+        <label>Brave Username (username@brave.com):</label><br>
         <input type="text" placeholder="username@brave.com" name="email"><br />
+        <label>Are you connecting to us through:</label><br>
         <input type="radio" id="exp_type" name="exp_type" value="direct">
         <label for="direct">Direct Connection</label><br>
         <input type="radio" id="exp_type" name="exp_type" value="vpn">
         <label for="vpn">VPN</label><br>
-        <input type="submit">
+        <input type="submit" onclick="submitHandler()">
+        <div id="loading" style="display:none;">
+          <button class="buttonload">
+            <i class="fa fa-spinner fa-spin"></i>Starting Measurements...
+          </button>
+        </div>
     </form>
+    <script>
+      function submitHandler() {
+        var loading = document.getElementById("loading");
+        if (loading.style.display === "none") {
+          loading.style.display = "block";
+        } else {
+          loading.style.display = "none";
+        }
+
+      }
+    </script>
   </body>
 </html>
