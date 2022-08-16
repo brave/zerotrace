@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// validateForm validates user input obtained from /measure webpage
 func validateForm(w http.ResponseWriter, r *http.Request) (FormDetails, error) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

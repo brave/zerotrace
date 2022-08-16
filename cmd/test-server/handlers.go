@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// serveFormTemplate serves the form
 func serveFormTemplate(w http.ResponseWriter) {
 	var WebTemplate, _ = template.ParseFiles(path.Join(directoryPath, "measure.html"))
 	if err := WebTemplate.Execute(w, nil); err != nil {
@@ -19,6 +20,7 @@ func serveFormTemplate(w http.ResponseWriter) {
 	}
 }
 
+// measureHandler serves the form which collects user's contact data and ground-truth (VPN/Direct) before experiment begins
 func measureHandler(w http.ResponseWriter, r *http.Request) {
 	if checkHTTPParams(w, r, "/measure") {
 		return
