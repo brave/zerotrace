@@ -2,13 +2,35 @@ package main
 
 import (
 	"errors"
-	"time"
-
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"net/http"
+	"regexp"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+// validateForm validates user input obtained from /measure webpage
+func validateForm(w http.ResponseWriter, r *http.Request) (FormDetails, error) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return FormDetails{}, nil
+	}
+	if m, _ := regexp.MatchString(`^\w+@brave\.com$`, r.FormValue("email")); !m {
+		return FormDetails{}, errors.New("Invalid Input")
+	}
+	if r.FormValue("exp_type") != "vpn" && r.FormValue("exp_type") != "direct" {
+		return FormDetails{}, errors.New("Invalid Input")
+	}
+	details := FormDetails{
+		UUID:      uuid.NewString(),
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+		Contact:   r.FormValue("email"),
+		ExpType:   r.FormValue("exp_type"),
+	}
+	return details, nil
+}
 
 // isValidUUID checks if UUID u is valid
 func isValidUUID(u string) bool {
