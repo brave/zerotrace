@@ -62,10 +62,11 @@ func newZeroTrace(iface string, conn net.Conn) *zeroTrace {
 	clientPort, _ := strconv.Atoi(clPort)
 
 	return &zeroTrace{
-		Iface:      iface,
-		Conn:       conn,
-		ClientIP:   clientIP,
-		ClientPort: clientPort,
+		Iface:        iface,
+		Conn:         conn,
+		ClientIP:     clientIP,
+		ClientPort:   clientPort,
+		SentPktsIPId: make(map[int][]SentPacketData),
 	}
 }
 
