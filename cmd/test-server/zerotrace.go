@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -25,7 +24,6 @@ const (
 
 var (
 	deviceName   string
-	icmpPktError = errors.New("IP header unavailable")
 )
 
 // SentPacketData struct keeps track of the IP ID value and Sent time for each TCP packet sent
@@ -161,7 +159,7 @@ func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT, quit cha
 				// If it is an ICMP packet, check if it is the ICMP TTL exceeded one we are looking for
 				if icmpLayer != nil && counter != currTTL {
 					err := z.processICMPpkt(packet, currTTL, &counter, hops)
-					if err == icmpPktError {
+					if err != nil {
 						continue
 					}
 				}
@@ -236,7 +234,7 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 	icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
 	ipHeaderIcmp, err := getHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
 	if err != nil {
-		return icmpPktError
+		return err
 	}
 
 	// We obtain the IPID from the IP header of the original packet that is present in the ICMP Error packet, and compare it to the IPID of the packet we sent with a particular TTL value

@@ -61,7 +61,7 @@ func getHeaderFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, error) {
 	ipHeaderLength := int((icmpPkt[0] & 0x0F) * 4)
 
 	if len(icmpPkt) < ipHeaderLength {
-		return nil, errors.New("Length of received ICMP packet too short to decode IP")
+		return nil, errors.New("IP header unavailable")
 	}
 	ip := layers.IPv4{}
 	ipErr := ip.DecodeFromBytes(icmpPkt[0:], gopacket.NilDecodeFeedback)
