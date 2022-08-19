@@ -75,7 +75,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
 
-	icmpResults := IcmpPinger(clientIP)
+	icmpResults := icmpPinger(clientIP)
 
 	// Combine all results
 	results := Results{

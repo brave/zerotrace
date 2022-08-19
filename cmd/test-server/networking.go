@@ -37,8 +37,8 @@ type Results struct {
 	AvgIcmpStat float64
 }
 
-// IcmpPinger sends ICMP pings and returns statistics
-func IcmpPinger(ip string) PingMsmt {
+// icmpPinger sends ICMP pings and returns statistics
+func icmpPinger(ip string) PingMsmt {
 	pinger, err := ping.NewPinger(ip)
 	if err != nil {
 		panic(err)
