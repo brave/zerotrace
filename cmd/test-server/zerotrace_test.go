@@ -81,9 +81,24 @@ func TestProcessICMPpkt(t *testing.T) {
 	pkt := gopacket.NewPacket(decodedByteArray, layers.LayerTypeEthernet, gopacket.Default)
 	pkt.Metadata().Timestamp = time.Now().UTC()
 
-	// Feed the function an IP address that should be ignored.
 	recvdHopChan := make(chan HopRTT)
 	close(recvdHopChan)
 	assert.PanicsWithError(t, "send on closed channel", func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
+	hexstream_withoutIPheader := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea00000000"
+	decodedByteArray, err = hex.DecodeString(hexstream_withoutIPheader)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	pkt = gopacket.NewPacket(decodedByteArray, layers.LayerTypeEthernet, gopacket.Default)
+	pkt.Metadata().Timestamp = time.Now().UTC()
+
+	recvdHopChan = make(chan HopRTT)
+	close(recvdHopChan)
+	err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
+	if err != nil {
+		assert.Error(t, icmpPktError, err)
+	}	
+	
 }
