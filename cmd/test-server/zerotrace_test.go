@@ -67,6 +67,7 @@ func TestProcessICMPpkt(t *testing.T) {
 	z := newZeroTrace("lo", c)
 	var counter int
 
+	// Test for ideal case, ICMP packet error is processed, data extracted and pushed to channel
 	hexstream := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea000000004500005700004000010691f9c0a80006ac3a7abf01bb55b65c14c98f"
 	decodedByteArray, err := hex.DecodeString(hexstream)
 	if err != nil {
@@ -84,9 +85,9 @@ func TestProcessICMPpkt(t *testing.T) {
 
 	recvdHopChan := make(chan HopRTT)
 	close(recvdHopChan)
-	// Test for ideal case, ICMP packet error is processed, data extracted and pushed to channel
 	assert.PanicsWithError(t, "send on closed channel", func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
+	// Test for Invalid IP header case
 	hexstream_withoutIPheader := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea00000000"
 	decodedByteArray, err = hex.DecodeString(hexstream_withoutIPheader)
 	if err != nil {
@@ -98,10 +99,10 @@ func TestProcessICMPpkt(t *testing.T) {
 
 	recvdHopChan = make(chan HopRTT)
 	close(recvdHopChan)
-	// Test for Invalid IP header case
 	err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
 	assert.Equal(t, errors.New("Invalid IP header"), err)
 
+	// Test with a valid ICMP echo reply packet, packet should be discarded as it is not an ICMP error packet, and IP header does not exist
 	hexstream_ICMPreply := "0aa89a80fc720ad8373494a6080045000034dfbd0000fe013e290311c4fbac1f2ab60000c41d4a1a000416feee5373d31835b8344b481dfe4d2f8301c9c6658e3f68"
 	decodedByteArray, err = hex.DecodeString(hexstream_ICMPreply)
 	if err != nil {
@@ -113,7 +114,6 @@ func TestProcessICMPpkt(t *testing.T) {
 
 	recvdHopChan = make(chan HopRTT)
 	close(recvdHopChan)
-	// Test with a valid ICMP echo reply packet, packet should be discarded as it is not an ICMP error packet, and IP header does not exist
 	err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
 	// Assert that there is an error (which results from IPv4.DecodeFromBytes)
 	assert.Error(t, err)
