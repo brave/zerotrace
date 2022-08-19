@@ -108,6 +108,21 @@ func TestProcessICMPpkt(t *testing.T) {
 	err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
 	assert.Equal(t, errors.New("Invalid IP header"), err)
 
+	// Test for Invalid IP header case, where IP header length is less than expected
+	hexstream_badIPheader := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea00000000450000570000400001"
+	decodedByteArray, err = hex.DecodeString(hexstream_badIPheader)
+	if err != nil {
+		t.Fatalf("Test failed, hexstream could not be decoded: %v", err)
+	}
+
+	pkt = gopacket.NewPacket(decodedByteArray, layers.LayerTypeEthernet, gopacket.Default)
+	pkt.Metadata().Timestamp = time.Now().UTC()
+
+	recvdHopChan = make(chan HopRTT)
+	close(recvdHopChan)
+	err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
+	assert.Equal(t, errors.New("IP header unavailable"), err)
+
 	// Test with a valid ICMP echo reply packet, packet should be discarded as it is not an ICMP error packet, and IP header does not exist
 	hexstream_ICMPreply := "0aa89a80fc720ad8373494a6080045000034dfbd0000fe013e290311c4fbac1f2ab60000c41d4a1a000416feee5373d31835b8344b481dfe4d2f8301c9c6658e3f68"
 	decodedByteArray, err = hex.DecodeString(hexstream_ICMPreply)
