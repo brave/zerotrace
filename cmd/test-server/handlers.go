@@ -28,7 +28,11 @@ func measureHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		serveFormTemplate(w)
 	} else {
-		details, err := validateForm(w, r)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		details, err := validateForm(r.FormValue("email"), r.FormValue("exp_type"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

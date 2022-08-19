@@ -4,7 +4,6 @@ import (
 	"errors"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"net/http"
 	"regexp"
 	"time"
 
@@ -12,22 +11,18 @@ import (
 )
 
 // validateForm validates user input obtained from /measure webpage
-func validateForm(w http.ResponseWriter, r *http.Request) (FormDetails, error) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return FormDetails{}, nil
-	}
-	if m, _ := regexp.MatchString(`^\w+@brave\.com$`, r.FormValue("email")); !m {
+func validateForm(email string, expType string) (FormDetails, error) {
+	if m, _ := regexp.MatchString(`^\w+@brave\.com$`, email); !m {
 		return FormDetails{}, errors.New("Invalid Input")
 	}
-	if r.FormValue("exp_type") != "vpn" && r.FormValue("exp_type") != "direct" {
+	if expType != "vpn" && expType != "direct" {
 		return FormDetails{}, errors.New("Invalid Input")
 	}
 	details := FormDetails{
 		UUID:      uuid.NewString(),
 		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		Contact:   r.FormValue("email"),
-		ExpType:   r.FormValue("exp_type"),
+		Contact:   email,
+		ExpType:   expType,
 	}
 	return details, nil
 }
