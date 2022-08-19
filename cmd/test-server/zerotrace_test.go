@@ -87,6 +87,12 @@ func TestProcessICMPpkt(t *testing.T) {
 	close(recvdHopChan)
 	assert.PanicsWithError(t, "send on closed channel", func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
+	// Test for case where client IP has been reached, it should panic as it tries to write using ErrLogger (zerotrace.go, L:285)
+	z.ClientIP = "192.168.0.1"
+	recvdHopChan = make(chan HopRTT)
+	close(recvdHopChan)
+	assert.Panics(t, func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
+
 	// Test for Invalid IP header case
 	hexstream_withoutIPheader := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea00000000"
 	decodedByteArray, err = hex.DecodeString(hexstream_withoutIPheader)
