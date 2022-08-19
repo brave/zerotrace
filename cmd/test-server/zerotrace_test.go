@@ -67,7 +67,7 @@ func TestProcessICMPpkt(t *testing.T) {
 	z := newZeroTrace("lo", c)
 	var counter int
 
-	// Test for ideal case, ICMP packet error is processed, data extracted and pushed to channel
+	// Test for ideal case, ICMP packet error is processed, data extracted and must panic when pushing to channel
 	hexstream := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea000000004500005700004000010691f9c0a80006ac3a7abf01bb55b65c14c98f"
 	decodedByteArray, err := hex.DecodeString(hexstream)
 	if err != nil {
@@ -87,7 +87,15 @@ func TestProcessICMPpkt(t *testing.T) {
 	close(recvdHopChan)
 	assert.PanicsWithError(t, "send on closed channel", func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
-	// Test for case where client IP has been reached, it should panic as it tries to write using ErrLogger (zerotrace.go, L:285)
+	// Test for case where client IP has been reached, panics when trying to write to recvdHopChan
+	z.ClientIP = "192.168.0.1"
+	recvdHopChan = make(chan HopRTT)
+	close(recvdHopChan)
+	assert.Panics(t, func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
+
+	// Test for case where client IP has been reached, but z.SendPktsIPId does not have the necessary IP Id, registers an error
+	// Still panics when writing to recvdHopChan
+	z.SentPktsIPId = make(map[int][]SentPacketData)
 	z.ClientIP = "192.168.0.1"
 	recvdHopChan = make(chan HopRTT)
 	close(recvdHopChan)

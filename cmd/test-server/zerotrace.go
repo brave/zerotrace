@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"time"
@@ -282,12 +283,14 @@ func (z *zeroTrace) processTCPpkt(packet gopacket.Packet, serverIP string) {
 // logs the current TTL value if the client has already been reached
 func (z *zeroTrace) extractTracerouteHopRTT(currTTL int, ipid uint16, recvTimestamp time.Time, clientReached bool) float64 {
 	if clientReached {
-		ErrLogger.Println("Traceroute reached client (ICMP response) at hop: ", currTTL)
+		log.Println("Traceroute reached client (ICMP response) at hop: ", currTTL)
+	} else {
+		log.Println("Received packet ipid: ", ipid, " TTL: ", currTTL)
 	}
 	var hopRTTVal time.Duration
 	sentTime, err := getSentTimestampfromIPId(z.SentPktsIPId[currTTL], ipid)
 	if err != nil {
-		ErrLogger.Println("Error getting timestamp from sent pkt: ", err)
+		log.Println("Error getting timestamp from sent pkt: ", err)
 		hopRTTVal = 0
 	} else {
 		hopRTTVal = recvTimestamp.Sub(sentTime)
