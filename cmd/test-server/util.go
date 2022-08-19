@@ -2,10 +2,11 @@ package main
 
 import (
 	"errors"
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
 	"regexp"
 	"time"
+
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 
 	"github.com/google/uuid"
 )

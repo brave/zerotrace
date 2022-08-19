@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
@@ -54,4 +55,14 @@ func TestGetSentTimestampfromIPId(t *testing.T) {
 	_, err = getSentTimestampfromIPId(sentPktsIPId[1], 1000)
 	assert.Error(t, errors.New("IP Id not in sent packets"), err)
 
+}
+
+func TestIsValidUUID(t *testing.T) {
+	// Fake UUID (random string) fails test
+	testUUID := "fake-uuid"
+	assert.Equal(t, false, isValidUUID(testUUID))
+
+	// UUID obtained from uuid passes
+	testUUID = uuid.NewString()
+	assert.Equal(t, true, isValidUUID(testUUID))
 }
