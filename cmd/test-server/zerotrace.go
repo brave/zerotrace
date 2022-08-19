@@ -285,8 +285,6 @@ func (z *zeroTrace) processTCPpkt(packet gopacket.Packet, serverIP string) {
 func (z *zeroTrace) extractTracerouteHopRTT(currTTL int, ipid uint16, recvTimestamp time.Time, clientReached bool) float64 {
 	if clientReached {
 		ErrLogger.Println("Traceroute reached client (ICMP response) at hop: ", currTTL)
-	} else {
-		ErrLogger.Println("Received packet ipid: ", ipid, " TTL: ", currTTL)
 	}
 	var hopRTTVal time.Duration
 	sentTime, err := getSentTimestampfromIPId(z.SentPktsIPId[currTTL], ipid)
