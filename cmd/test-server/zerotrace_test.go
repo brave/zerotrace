@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/hex"
-	"fmt"
 	"errors"
 	"github.com/stretchr/testify/assert"
 	"net"
@@ -102,7 +101,6 @@ func TestProcessICMPpkt(t *testing.T) {
 	// Test for Invalid IP header case
 	err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
 	assert.Equal(t, errors.New("Invalid IP header"), err)
-
 
 	hexstream_ICMPreply := "0aa89a80fc720ad8373494a6080045000034dfbd0000fe013e290311c4fbac1f2ab60000c41d4a1a000416feee5373d31835b8344b481dfe4d2f8301c9c6658e3f68"
 	decodedByteArray, err = hex.DecodeString(hexstream_ICMPreply)

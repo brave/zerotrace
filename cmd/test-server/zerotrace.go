@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	deviceName   string
+	deviceName string
 )
 
 // SentPacketData struct keeps track of the IP ID value and Sent time for each TCP packet sent
