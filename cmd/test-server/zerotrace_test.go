@@ -12,6 +12,10 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+const (
+	panicChanErr = "send on closed channel"
+)
+
 func TestProcessTCPpkt(t *testing.T) {
 	c, _ := net.Pipe()
 	z := newZeroTrace("lo", c)
@@ -85,13 +89,13 @@ func TestProcessICMPpkt(t *testing.T) {
 
 	recvdHopChan := make(chan HopRTT)
 	close(recvdHopChan)
-	assert.PanicsWithError(t, "send on closed channel", func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
+	assert.PanicsWithError(t, panicChanErr, func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
 	// Test for case where client IP has been reached, panics when trying to write to recvdHopChan
 	z.ClientIP = "192.168.0.1"
 	recvdHopChan = make(chan HopRTT)
 	close(recvdHopChan)
-	assert.Panics(t, func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
+	assert.PanicsWithError(t, panicChanErr, func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
 	// Test for case where client IP has been reached, but z.SendPktsIPId does not have the necessary IP Id, registers an error
 	// Still panics when writing to recvdHopChan
@@ -99,7 +103,7 @@ func TestProcessICMPpkt(t *testing.T) {
 	z.ClientIP = "192.168.0.1"
 	recvdHopChan = make(chan HopRTT)
 	close(recvdHopChan)
-	assert.Panics(t, func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
+	assert.PanicsWithError(t, panicChanErr, func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
 	// Test for Invalid IP header case
 	hexstream_withoutIPheader := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea00000000"
