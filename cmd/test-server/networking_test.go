@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/stretchr/testify/assert"
+	"errors"
 	"testing"
 )
 
@@ -12,15 +12,14 @@ func TestIcmpPinger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected no error, but got %v", err)
 	}
-	assert.IsType(t, PingMsmt{}, icmpResults)
-	assert.Equal(t, "127.0.0.1", icmpResults.IP)
+	AssertEqualValue(t, "127.0.0.1", icmpResults.IP)
 
 	// Test with invalid IP
 	_, err = icmpPinger("127.0.0.0.1")
-	assert.Equal(t, "lookup 127.0.0.0.1: no such host", err.Error())
+	AssertEqualError(t, errors.New("lookup 127.0.0.0.1: no such host"), err)
 
 	// Test with IP that will fail
 	_, err = icmpPinger("0.0.0.0")
-	assert.Equal(t, "write udp 0.0.0.0:0->0.0.0.0:0: sendto: socket is not connected", err.Error())
+	AssertEqualError(t, errors.New("write udp 0.0.0.0:0->0.0.0.0:0: sendto: socket is not connected"), err)
 
 }

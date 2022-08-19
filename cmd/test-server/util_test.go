@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
 )
@@ -13,27 +12,49 @@ var (
 	currentTime     = time.Now().UTC()
 )
 
+func AssertEqualError(t *testing.T, expected error, actual error) {
+	t.Helper()
+	if expected.Error() != actual.Error() {
+		t.Errorf("Expected %s, got %s",
+			expected, actual)
+	}
+}
+
+func AssertEqualValue(t *testing.T, expected any, actual any) {
+	t.Helper()
+	if expected != actual {
+		t.Errorf("Expected %v, got %v",
+			expected, actual)
+	}
+}
+
+func AssertError(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Errorf("Expected an error but got nil")
+	}
+}
+
 func TestValidateForm(t *testing.T) {
 	// Send valid email and experiment type, check that returned object is exactly as expected
 	details, err := validateForm("user@brave.com", "vpn")
 	if err != nil {
 		t.Fatalf("Expected no error, but got %v", err)
 	}
-	assert.IsType(t, FormDetails{}, details)
-	assert.Equal(t, "user@brave.com", details.Contact)
-	assert.Equal(t, "vpn", details.ExpType)
+	AssertEqualValue(t, "user@brave.com", details.Contact)
+	AssertEqualValue(t, "vpn", details.ExpType)
 
 	// Send invalid email
 	_, err = validateForm("baduser@invalid.com", "vpn")
-	assert.Equal(t, invalidInputErr, err)
+	AssertEqualError(t, invalidInputErr, err)
 
 	// Send invalid expType
 	_, err = validateForm("user@brave.com", "unknown")
-	assert.Equal(t, invalidInputErr, err)
+	AssertEqualError(t, invalidInputErr, err)
 
 	// Send empty input
 	_, err = validateForm("", "")
-	assert.Equal(t, invalidInputErr, err)
+	AssertEqualError(t, invalidInputErr, err)
 }
 
 func TestGetSentTimestampfromIPId(t *testing.T) {
@@ -53,16 +74,16 @@ func TestGetSentTimestampfromIPId(t *testing.T) {
 
 	// Retrieve the sent time for a invalid IP ID that does not exist in the slice that was passed
 	_, err = getSentTimestampfromIPId(sentPktsIPId[1], 1000)
-	assert.Error(t, errors.New("IP Id not in sent packets"), err)
+	AssertEqualError(t, errors.New("IP Id not in sent packets"), err)
 
 }
 
 func TestIsValidUUID(t *testing.T) {
 	// Fake UUID (random string) fails test
 	testUUID := "fake-uuid"
-	assert.Equal(t, false, isValidUUID(testUUID))
+	AssertEqualValue(t, false, isValidUUID(testUUID))
 
 	// UUID obtained from uuid passes
 	testUUID = uuid.NewString()
-	assert.Equal(t, true, isValidUUID(testUUID))
+	AssertEqualValue(t, true, isValidUUID(testUUID))
 }
