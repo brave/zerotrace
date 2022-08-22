@@ -3,18 +3,28 @@ package main
 import (
 	"encoding/hex"
 	"errors"
-	"github.com/stretchr/testify/assert"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
 	panicChanErr = "send on closed channel"
 )
+
+func hexToPkt(t *testing.T, hexString string) gopacket.Packet {
+	decodedByteArray, err := hex.DecodeString(hexString)
+	if err != nil {
+		t.Fatalf("Test failed, hexstream could not be decoded: %v", err)
+	}
+	pkt := gopacket.NewPacket(decodedByteArray, layers.LayerTypeEthernet, gopacket.Default)
+	pkt.Metadata().Timestamp = time.Now().UTC()
+	return pkt
+}
 
 func TestProcessTCPpkt(t *testing.T) {
 	c, _ := net.Pipe()
@@ -73,10 +83,8 @@ func TestProcessICMPpkt(t *testing.T) {
 
 	// Test for ideal case, ICMP packet error is processed, data extracted and must panic when pushing to channel
 	hexstream := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea000000004500005700004000010691f9c0a80006ac3a7abf01bb55b65c14c98f"
-	decodedByteArray, err := hex.DecodeString(hexstream)
-	if err != nil {
-		t.Fatalf("Test failed, hexstream could not be decoded: %v", err)
-	}
+	pkt := hexToPkt(t, hexstream)
+
 	// Mock TTL, but IPID is the same as what was found in the original IP header in the received ICMP error pkt
 	ttl := uint8(10)
 	currTTL := int(ttl)
@@ -84,18 +92,17 @@ func TestProcessICMPpkt(t *testing.T) {
 	// Set up data in SentPktsIPId
 	z.SentPktsIPId[currTTL] = append(z.SentPktsIPId[currTTL], SentPacketData{HopIPId: ipID, HopSentTime: time.Now().UTC()})
 
-	pkt := gopacket.NewPacket(decodedByteArray, layers.LayerTypeEthernet, gopacket.Default)
-	pkt.Metadata().Timestamp = time.Now().UTC()
-
+	// Open and close the channel that processICMPpkt will try to write into
 	recvdHopChan := make(chan HopRTT)
 	close(recvdHopChan)
-	assert.PanicsWithError(t, panicChanErr, func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
+
+	assert.PanicsWithError(t, panicChanErr, func() { _ = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
 	// Test for case where client IP has been reached, panics when trying to write to recvdHopChan
 	z.ClientIP = "192.168.0.1"
 	recvdHopChan = make(chan HopRTT)
 	close(recvdHopChan)
-	assert.PanicsWithError(t, panicChanErr, func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
+	assert.PanicsWithError(t, panicChanErr, func() { _ = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
 	// Test for case where client IP has been reached, but z.SendPktsIPId does not have the necessary IP Id, registers an error
 	// Still panics when writing to recvdHopChan
@@ -103,32 +110,20 @@ func TestProcessICMPpkt(t *testing.T) {
 	z.ClientIP = "192.168.0.1"
 	recvdHopChan = make(chan HopRTT)
 	close(recvdHopChan)
-	assert.PanicsWithError(t, panicChanErr, func() { err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
+	assert.PanicsWithError(t, panicChanErr, func() { _ = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
 	// Test for Invalid IP header case
 	hexstream_withoutIPheader := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea00000000"
-	decodedByteArray, err = hex.DecodeString(hexstream_withoutIPheader)
-	if err != nil {
-		t.Fatalf("Test failed, hexstream could not be decoded: %v", err)
-	}
-
-	pkt = gopacket.NewPacket(decodedByteArray, layers.LayerTypeEthernet, gopacket.Default)
-	pkt.Metadata().Timestamp = time.Now().UTC()
+	pkt = hexToPkt(t, hexstream_withoutIPheader)
 
 	recvdHopChan = make(chan HopRTT)
 	close(recvdHopChan)
-	err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
+	err := z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
 	AssertEqualError(t, errors.New("Invalid IP header"), err)
 
 	// Test for Invalid IP header case, where IP header length is less than expected
 	hexstream_badIPheader := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea00000000450000570000400001"
-	decodedByteArray, err = hex.DecodeString(hexstream_badIPheader)
-	if err != nil {
-		t.Fatalf("Test failed, hexstream could not be decoded: %v", err)
-	}
-
-	pkt = gopacket.NewPacket(decodedByteArray, layers.LayerTypeEthernet, gopacket.Default)
-	pkt.Metadata().Timestamp = time.Now().UTC()
+	pkt = hexToPkt(t, hexstream_badIPheader)
 
 	recvdHopChan = make(chan HopRTT)
 	close(recvdHopChan)
@@ -137,13 +132,7 @@ func TestProcessICMPpkt(t *testing.T) {
 
 	// Test with a valid ICMP echo reply packet, packet should be discarded as it is not an ICMP error packet, and IP header does not exist
 	hexstream_ICMPreply := "0aa89a80fc720ad8373494a6080045000034dfbd0000fe013e290311c4fbac1f2ab60000c41d4a1a000416feee5373d31835b8344b481dfe4d2f8301c9c6658e3f68"
-	decodedByteArray, err = hex.DecodeString(hexstream_ICMPreply)
-	if err != nil {
-		t.Fatalf("Test failed, hexstream could not be decoded: %v", err)
-	}
-
-	pkt = gopacket.NewPacket(decodedByteArray, layers.LayerTypeEthernet, gopacket.Default)
-	pkt.Metadata().Timestamp = time.Now().UTC()
+	pkt = hexToPkt(t, hexstream_ICMPreply)
 
 	recvdHopChan = make(chan HopRTT)
 	close(recvdHopChan)
