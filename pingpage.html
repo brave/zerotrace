@@ -2,11 +2,23 @@
 
 <html>
   <head>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <meta charset = "utf-8">
     <title>Calculate Latency Using WebSockets</title>
     <style>
       p {
         display: inline-block;
+      }
+      .buttonload {
+        background-color: #cec1e7;
+        border: none; /* Remove borders */
+        color: black; /* White text */
+        padding: 12px 24px; /* Some padding */
+        font-size: 16px; /* Set a font-size */
+      }
+      .fa {
+        margin-left: -12px;
+        margin-right: 8px;
       }
     </style>
 
@@ -19,7 +31,17 @@
     <p>All WebSocket measurements: &ensp;</p><p id="values"></p> <br>
     <p>Median WS latency: &ensp;</p><p id="data"></p> <br>
     <p>ICMP ping statistics: We conducted measaurements to your IP. Average RTT: &ensp;</p> <p id="icmp"></p> <br>
+    <div id="loading">
+      <button class="buttonload">
+        <i class="fa fa-spinner fa-spin"></i>Running Zero Trace Measurements, do not close this window (approx 2 minutes)...
+      </button>
+    </div>
       <script>
+      setTimeout(() => {
+        const loading = document.getElementById("loading");
+        loading.style.display = "none";
+      }, 120000);
+
      function median(values){
             if (values.length ===0) return 0;
             values.sort(function(a,b){
