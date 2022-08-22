@@ -50,7 +50,7 @@ func icmpPinger(ip string) (*PingMsmt, error) {
 		return nil, err
 	}
 	stat := pinger.Statistics()
-	icmp := PingMsmt{ip, stat.PacketsSent, stat.PacketsRecv, stat.PacketLoss, fmtTimeMs(stat.MinRtt),
+	pingMsmt := PingMsmt{ip, stat.PacketsSent, stat.PacketsRecv, stat.PacketLoss, fmtTimeMs(stat.MinRtt),
 		fmtTimeMs(stat.AvgRtt), fmtTimeMs(stat.MaxRtt), fmtTimeMs(stat.StdDevRtt)}
-	return &icmp, nil
+	return &pingMsmt, nil
 }
