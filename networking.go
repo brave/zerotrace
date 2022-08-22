@@ -38,19 +38,19 @@ type Results struct {
 }
 
 // icmpPinger sends ICMP pings and returns statistics
-func icmpPinger(ip string) (PingMsmt, error) {
+func icmpPinger(ip string) (*PingMsmt, error) {
 	pinger, err := ping.NewPinger(ip)
 	if err != nil {
-		return PingMsmt{}, err
+		return nil, err
 	}
 	pinger.Count = icmpCount
 	pinger.Timeout = icmpTimeout
 	err = pinger.Run() // Blocks until finished.
 	if err != nil {
-		return PingMsmt{}, err
+		return nil, err
 	}
 	stat := pinger.Statistics()
 	icmp := PingMsmt{ip, stat.PacketsSent, stat.PacketsRecv, stat.PacketLoss, fmtTimeMs(stat.MinRtt),
 		fmtTimeMs(stat.AvgRtt), fmtTimeMs(stat.MaxRtt), fmtTimeMs(stat.StdDevRtt)}
-	return icmp, nil
+	return &icmp, nil
 }

@@ -12,12 +12,12 @@ import (
 )
 
 // validateForm validates user input obtained from /measure webpage
-func validateForm(email string, expType string) (FormDetails, error) {
+func validateForm(email string, expType string) (*FormDetails, error) {
 	if m, _ := regexp.MatchString(`^\w+@brave\.com$`, email); !m {
-		return FormDetails{}, errors.New("Invalid Input")
+		return nil, errors.New("Invalid Input")
 	}
 	if expType != "vpn" && expType != "direct" {
-		return FormDetails{}, errors.New("Invalid Input")
+		return nil, errors.New("Invalid Input")
 	}
 	details := FormDetails{
 		UUID:      uuid.NewString(),
@@ -25,7 +25,7 @@ func validateForm(email string, expType string) (FormDetails, error) {
 		Contact:   email,
 		ExpType:   expType,
 	}
-	return details, nil
+	return &details, nil
 }
 
 // isValidUUID checks if UUID u is valid

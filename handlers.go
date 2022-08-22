@@ -86,7 +86,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		IPaddr: clientIP,
 		//RFC3339 style UTC date time with added seconds information
 		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		IcmpPing:    icmpResults,
+		IcmpPing:    *icmpResults,
 		AvgIcmpStat: icmpResults.AvgRtt,
 	}
 
