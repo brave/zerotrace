@@ -28,9 +28,13 @@ func measureHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		serveFormTemplate(w)
 	} else {
-		details, err := validateForm(w, r)
-		if err != nil {
+		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		details, err := validateForm(r.FormValue("email"), r.FormValue("exp_type"), r.FormValue("location_vpn"), r.FormValue("location_user"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		jsObj, err := json.Marshal(details)
@@ -71,16 +75,19 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
 
-	icmpResults := IcmpPinger(clientIP)
+	icmpResults, err := icmpPinger(clientIP)
+	if err != nil {
+		ErrLogger.Println("ICMP Ping Error: ", err)
+	}
 
 	// Combine all results
 	results := Results{
 		UUID:   uuid,
 		IPaddr: clientIP,
 		//RFC3339 style UTC date time with added seconds information
-		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		IcmpPing:    icmpResults,
-		AvgIcmpStat: icmpResults.AvgRtt,
+		Timestamp:  time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+		IcmpPing:   *icmpResults,
+		MinIcmpRtt: icmpResults.MinRtt,
 	}
 
 	jsObj, err := json.Marshal(results)
@@ -121,25 +128,13 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 	myConn := c.UnderlyingConn()
 
-	zeroTraceInstance := newZeroTrace(deviceName, myConn)
+	zeroTraceInstance := newZeroTrace(deviceName, myConn, uuid)
 
-	traceroute, err := zeroTraceInstance.Run()
+	err = zeroTraceInstance.Run()
 	if err != nil {
 		ErrLogger.Println("ZeroTrace Run Error: ", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	results := TracerouteResults{
-		UUID:      uuid,
-		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		HopData:   traceroute,
-	}
-	zeroTraceResult, err := json.Marshal(results)
-	if err != nil {
-		ErrLogger.Println("Error logging 0trace results: ", err)
-		InfoLogger.Println(results) // Dump results in non-JSON format
-	}
-	zeroTraceString := string(zeroTraceResult)
-	InfoLogger.Println(zeroTraceString)
 }
 
 // echoHandler for the echo webserver that speaks WebSocket

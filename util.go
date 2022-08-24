@@ -1,35 +1,56 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
-	"net/http"
+	"log"
 	"regexp"
 	"time"
+
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 
 	"github.com/google/uuid"
 )
 
+var (
+	invalidInputErr = errors.New("Invalid Input")
+)
+
+func logAsJson(obj any, GivenLogger *log.Logger) {
+	objM, err := json.Marshal(obj)
+	if err != nil {
+		ErrLogger.Println("Error logging results: ", err)
+		ErrLogger.Println(obj) // Dump results in non-JSON format
+	}
+	objString := string(objM)
+	GivenLogger.Println(objString)
+}
+
 // validateForm validates user input obtained from /measure webpage
-func validateForm(w http.ResponseWriter, r *http.Request) (FormDetails, error) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return FormDetails{}, nil
+func validateForm(email string, expType string, locationVPN string, locationUser string) (*FormDetails, error) {
+	if match, _ := regexp.MatchString(`^\w+@brave\.com$`, email); !match {
+		return nil, invalidInputErr
 	}
-	if m, _ := regexp.MatchString(`^\w+@brave\.com$`, r.FormValue("email")); !m {
-		return FormDetails{}, errors.New("Invalid Input")
+	if expType != "vpn" && expType != "direct" {
+		return nil, invalidInputErr
 	}
-	if r.FormValue("exp_type") != "vpn" && r.FormValue("exp_type") != "direct" {
-		return FormDetails{}, errors.New("Invalid Input")
+	if match, _ := regexp.MatchString(`^[\w,.'";:\s\d(){}]*$`, locationVPN); !match {
+		return nil, invalidInputErr
 	}
+	if match, _ := regexp.MatchString(`^[\w,.'";:\s\d(){}]*$`, locationUser); !match {
+		return nil, invalidInputErr
+	}
+
 	details := FormDetails{
-		UUID:      uuid.NewString(),
-		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		Contact:   r.FormValue("email"),
-		ExpType:   r.FormValue("exp_type"),
+		UUID:         uuid.NewString(),
+		Timestamp:    time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+		Contact:      email,
+		ExpType:      expType,
+		LocationVPN:  locationVPN,
+		LocationUser: locationUser,
 	}
-	return details, nil
+	return &details, nil
 }
 
 // isValidUUID checks if UUID u is valid
@@ -61,7 +82,7 @@ func getHeaderFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, error) {
 	ipHeaderLength := int((icmpPkt[0] & 0x0F) * 4)
 
 	if len(icmpPkt) < ipHeaderLength {
-		return nil, errors.New("Length of received ICMP packet too short to decode IP")
+		return nil, errors.New("IP header unavailable")
 	}
 	ip := layers.IPv4{}
 	ipErr := ip.DecodeFromBytes(icmpPkt[0:], gopacket.NilDecodeFeedback)
