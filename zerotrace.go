@@ -41,6 +41,7 @@ type HopRTT struct {
 type zeroTrace struct {
 	Iface            string
 	Conn             net.Conn
+	UUID             string
 	PcapHdl          *pcap.Handle
 	ClientIP         string
 	ClientPort       int
@@ -55,7 +56,7 @@ type TracerouteResults struct {
 }
 
 // newZeroTrace instantiates and returns a new zeroTrace struct with the interface, net.Conn underlying connection, client IP and port data
-func newZeroTrace(iface string, conn net.Conn) *zeroTrace {
+func newZeroTrace(iface string, conn net.Conn, uuid string) *zeroTrace {
 	clientIPstr := conn.RemoteAddr().String()
 	clientIP, clPort, _ := net.SplitHostPort(clientIPstr)
 	clientPort, _ := strconv.Atoi(clPort)
@@ -63,6 +64,7 @@ func newZeroTrace(iface string, conn net.Conn) *zeroTrace {
 	return &zeroTrace{
 		Iface:        iface,
 		Conn:         conn,
+		UUID:         uuid,
 		ClientIP:     clientIP,
 		ClientPort:   clientPort,
 		SentPktsIPId: make(map[int][]SentPacketData),
@@ -91,7 +93,7 @@ func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan HopRTT) (map[int
 		}
 		if traceroute[ttlValue].IP.String() == z.ClientIP {
 			// The client has been reached and RTT has been recorded, so we can break
-			break
+			return traceroute, nil
 		}
 	}
 	return traceroute, nil
@@ -99,10 +101,10 @@ func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan HopRTT) (map[int
 
 // Run reaches the underlying connection and sets up necessary pcap handles
 // and implements the 0trace method of sending TTL-limited probes on an existing TCP connection
-func (z *zeroTrace) Run() (map[int]HopRTT, error) {
+func (z *zeroTrace) Run() error {
 	var err error
 	if z.PcapHdl, err = z.setupPcapAndFilter(); err != nil {
-		return nil, err
+		return err
 	}
 
 	recvdHopChan := make(chan HopRTT)
@@ -111,8 +113,15 @@ func (z *zeroTrace) Run() (map[int]HopRTT, error) {
 	go z.recvPackets(z.PcapHdl, recvdHopChan, quit)
 
 	traceroute, err := z.sendTTLIncrementingProbes(recvdHopChan)
+	results := TracerouteResults{
+		UUID:      z.UUID,
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+		HopData:   traceroute,
+	}
+	logAsJson(results, InfoLogger)
+
 	quit <- true
-	return traceroute, err
+	return err
 }
 
 // setupPcap sets up the pcap handle on the required interface, and applies the filter and returns it
@@ -246,7 +255,11 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 	ipid := ipHeaderIcmp.Id
 	recvTimestamp := packet.Metadata().Timestamp
 	if currHop.String() == z.ClientIP {
-		hops <- HopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, true)}
+		val := HopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, true)}
+		// May recieve ICMP responses from Client IP during the connection that are unrelated to 0trace so check for error from extractTracerouteHopRTT
+		if val.RTT != 0 {
+			hops <- val
+		}
 		return nil
 	}
 	if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {

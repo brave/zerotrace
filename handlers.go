@@ -128,25 +128,13 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 	myConn := c.UnderlyingConn()
 
-	zeroTraceInstance := newZeroTrace(deviceName, myConn)
+	zeroTraceInstance := newZeroTrace(deviceName, myConn, uuid)
 
-	traceroute, err := zeroTraceInstance.Run()
+	err = zeroTraceInstance.Run()
 	if err != nil {
 		ErrLogger.Println("ZeroTrace Run Error: ", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	results := TracerouteResults{
-		UUID:      uuid,
-		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		HopData:   traceroute,
-	}
-	zeroTraceResult, err := json.Marshal(results)
-	if err != nil {
-		ErrLogger.Println("Error logging 0trace results: ", err)
-		InfoLogger.Println(results) // Dump results in non-JSON format
-	}
-	zeroTraceString := string(zeroTraceResult)
-	InfoLogger.Println(zeroTraceString)
 }
 
 // echoHandler for the echo webserver that speaks WebSocket

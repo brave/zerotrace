@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,13 +22,13 @@ func hexToPkt(t *testing.T, hexString string) gopacket.Packet {
 		t.Fatalf("Test failed, hexstream could not be decoded: %v", err)
 	}
 	pkt := gopacket.NewPacket(decodedByteArray, layers.LayerTypeEthernet, gopacket.Default)
-	pkt.Metadata().Timestamp = time.Now().UTC()
+	pkt.Metadata().Timestamp = time.Now().UTC().Add(500 * time.Millisecond) // random delay to mock received packet
 	return pkt
 }
 
 func TestProcessTCPpkt(t *testing.T) {
 	c, _ := net.Pipe()
-	z := newZeroTrace("lo", c)
+	z := newZeroTrace("lo", c, uuid.NewString())
 
 	ttl := uint8(10)
 	ipID := uint16(20)
@@ -77,7 +78,7 @@ func TestProcessTCPpkt(t *testing.T) {
 // 18:51:11.166865 IP 192.168.0.1 > 192.168.0.6: ICMP time exceeded in-transit, length 36
 func TestProcessICMPpkt(t *testing.T) {
 	c, _ := net.Pipe()
-	z := newZeroTrace("lo", c)
+	z := newZeroTrace("lo", c, uuid.NewString())
 	var counter int
 
 	// Test for ideal case, ICMP packet error is processed, data extracted and must panic when pushing to channel
@@ -93,7 +94,6 @@ func TestProcessICMPpkt(t *testing.T) {
 	// Open and close the channel that processICMPpkt will try to write into
 	recvdHopChan := make(chan HopRTT)
 	close(recvdHopChan)
-
 	assert.PanicsWithError(t, panicChanErr, func() { _ = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
 	// Test for case where client IP has been reached, panics when trying to write to recvdHopChan
@@ -101,15 +101,16 @@ func TestProcessICMPpkt(t *testing.T) {
 	assert.PanicsWithError(t, panicChanErr, func() { _ = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
 	// Test for case where client IP has been reached, but z.SendPktsIPId does not have the necessary IP Id, registers an error
-	// Still panics when writing to recvdHopChan
+	// and does not write to recvdHopChan
 	z.SentPktsIPId = make(map[int][]SentPacketData)
 	z.ClientIP = "192.168.0.1"
-	assert.PanicsWithError(t, panicChanErr, func() { _ = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
+	err := z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
+	assert.NoError(t, err)
 
 	// Test for Invalid IP header case -- truncated version of the above packet
 	hexstream_withoutIPheader := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea00000000"
 	pkt = hexToPkt(t, hexstream_withoutIPheader)
-	err := z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
+	err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
 	AssertError(t, err)
 	AssertEqualValue(t, "Invalid IP header", err.Error())
 
