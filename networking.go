@@ -30,11 +30,11 @@ type PingMsmt struct {
 }
 
 type Results struct {
-	UUID        string
-	IPaddr      string
-	Timestamp   string
-	IcmpPing    PingMsmt
-	AvgIcmpStat float64
+	UUID       string
+	IPaddr     string
+	Timestamp  string
+	IcmpPing   PingMsmt
+	MinIcmpRtt float64
 }
 
 // icmpPinger sends ICMP pings and returns statistics

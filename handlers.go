@@ -85,9 +85,9 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		UUID:   uuid,
 		IPaddr: clientIP,
 		//RFC3339 style UTC date time with added seconds information
-		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		IcmpPing:    *icmpResults,
-		AvgIcmpStat: icmpResults.AvgRtt,
+		Timestamp:  time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+		IcmpPing:   *icmpResults,
+		MinIcmpRtt: icmpResults.MinRtt,
 	}
 
 	jsObj, err := json.Marshal(results)

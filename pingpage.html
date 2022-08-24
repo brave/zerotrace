@@ -134,7 +134,7 @@
         document.getElementById('ip').innerHTML = {{ .IPaddr }};
         document.getElementById('values').innerHTML = latencies;
         document.getElementById('data').innerHTML = min(latencies);
-        document.getElementById('icmp').innerHTML = {{ .AvgIcmpStat }};
+        document.getElementById('icmp').innerHTML = {{ .MinIcmpRtt }};
       });
     </script>
   </body>
