@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"log"
 	"regexp"
 	"time"
 
@@ -14,6 +16,16 @@ import (
 var (
 	invalidInputErr = errors.New("Invalid Input")
 )
+
+func logAsJson(obj any, GivenLogger *log.Logger) {
+	objM, err := json.Marshal(obj)
+	if err != nil {
+		ErrLogger.Println("Error logging results: ", err)
+		ErrLogger.Println(obj) // Dump results in non-JSON format
+	}
+	objString := string(objM)
+	GivenLogger.Println(objString)
+}
 
 // validateForm validates user input obtained from /measure webpage
 func validateForm(email string, expType string) (*FormDetails, error) {
