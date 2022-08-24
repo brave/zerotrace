@@ -38,10 +38,18 @@
         <label>Brave Email ID (username@brave.com):</label><br>
         <input type="text" placeholder="username@brave.com" name="email"><br />
         <label>Are you connecting to us through:</label><br>
-        <input type="radio" id="exp_type" name="exp_type" value="direct">
+        <input type="radio" id="exp_type" name="exp_type" value="direct" onclick="document.getElementById('locinfo').style.display='none'">
         <label for="direct">Direct Connection</label><br>
-        <input type="radio" id="exp_type" name="exp_type" value="vpn">
+        <input type="radio" id="exp_type" name="exp_type" value="vpn" onclick="document.getElementById('locinfo').style.display='block'">
         <label for="vpn">VPN</label><br>
+        <div id="locinfo" style="display:none;">
+          <label>Location of VPN server connected (enter city, state):</label><br>
+          <input type="text" name="location_vpn"><br />
+          <label>Location of user (enter city, state):</label><br>
+          <input type="text" name="location_user"><br />
+          <label>We only use this information to reason about the measured latencies and physical distance.</label><br>
+          <label>Please enter <i>unknown</i> if you are unsure about VPN server location, or <i>"best available"</i> if you chose that on your VPN.</label><br>
+        </div>
         <input type="submit" onclick="submitHandler()">
         <div id="loading" style="display:none;">
           <button class="buttonload">

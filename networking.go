@@ -12,10 +12,12 @@ const (
 )
 
 type FormDetails struct {
-	UUID      string
-	Timestamp string
-	Contact   string
-	ExpType   string
+	UUID         string
+	Timestamp    string
+	Contact      string
+	ExpType      string
+	LocationVPN  string
+	LocationUser string
 }
 
 type PingMsmt struct {

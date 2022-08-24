@@ -32,7 +32,7 @@ func measureHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		details, err := validateForm(r.FormValue("email"), r.FormValue("exp_type"))
+		details, err := validateForm(r.FormValue("email"), r.FormValue("exp_type"), r.FormValue("location_vpn"), r.FormValue("location_user"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

@@ -28,7 +28,7 @@ func AssertError(t *testing.T, err error) {
 
 func TestValidateForm(t *testing.T) {
 	// Send valid email and experiment type, check that returned object is exactly as expected
-	details, err := validateForm("user@brave.com", "vpn")
+	details, err := validateForm("user@brave.com", "vpn", "abc, xyz", "qwe, bnm")
 	if err != nil {
 		t.Fatalf("Expected no error, but got %v", err)
 	}
@@ -36,17 +36,17 @@ func TestValidateForm(t *testing.T) {
 	AssertEqualValue(t, "vpn", details.ExpType)
 
 	// Send invalid email
-	_, err = validateForm("baduser@invalid.com", "vpn")
+	_, err = validateForm("baduser@invalid.com", "vpn", "", "")
 	AssertError(t, err)
 	AssertEqualValue(t, invalidInputErr, err)
 
 	// Send invalid expType
-	_, err = validateForm("user@brave.com", "unknown")
+	_, err = validateForm("user@brave.com", "unknown", "", "")
 	AssertError(t, err)
 	AssertEqualValue(t, invalidInputErr, err)
 
 	// Send empty input
-	_, err = validateForm("", "")
+	_, err = validateForm("", "", "", "")
 	AssertError(t, err)
 	AssertEqualValue(t, invalidInputErr, err)
 }
