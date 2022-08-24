@@ -2,14 +2,9 @@
 # Run as: ruby lookup-by-uuid.rb log.jsonl efdca7f8-9c6b-47c1-8911-f50e1e426384
 require 'json'
 
-def getMedian(arr)
+def getMin(arr)
     sorted = arr.sort
-        middle = arr.length / 2 
-        if arr.length.even?
-            return sorted[middle-1, 2].sum / 2.0
-        else
-            return sorted[middle]
-        end
+    return sorted[0]
 end
 
 def getZeroTracedata(hops)
@@ -41,10 +36,10 @@ ip.each_line do |line|
             puts "Experiment Type:          " + json["ExpType"]
         elsif icmp != nil
             puts "IP address:               " + icmp["IP"]
-            puts "AvgRTT:                   " + json["AvgIcmpStat"].to_s
+            puts "MinRTT:                   " + json["IcmpPing"]["MinRtt"].to_s
         elsif ws != nil
             puts "Websocket Latencies:      " + ws.to_s
-            puts "Median WS RTT:            " + getMedian(ws).to_s
+            puts "Min WS RTT:               " + getMin(ws).to_s
         elsif zt != nil 
             found = true
             lastHop, data = getZeroTracedata(zt)

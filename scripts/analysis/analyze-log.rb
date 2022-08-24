@@ -1,18 +1,11 @@
-# read log file and output results
-# Run as: ruby analyze-log.rb log.jsonl
-# OR for a particular UUID
-# ruby analyze-log.rb log.jsonl efdca7f8-9c6b-47c1-8911-f50e1e426384
+# create new file, keeping track of uuid and final RTT diff
+# Run as: ruby analyze-log.rb log.jsonl analyzed-data.jsonl
 
 require 'json'
 
-def getMedian(arr)
+def getMin(arr)
     sorted = arr.sort
-        middle = arr.length / 2 
-        if arr.length.even?
-            return sorted[middle-1, 2].sum / 2.0
-        else
-            return sorted[middle]
-        end
+    return sorted[0]
 end
 
 def getZeroTracedata(hops)
@@ -29,38 +22,49 @@ def getZeroTracedata(hops)
 end
 
 # Data structures to keep track of Websocket RTT results and ZeroTrace Results
-ztResult = Struct.new(:finalHop, :rtt)
+ztResult = Struct.new(:finalHop, :finalIP, :rtt)
 ws = Hash.new
 zerotrace = Hash.new
+type = Hash.new
+icmpStat = Hash.new
+clientIP = Hash.new
 
 ip = File.open(ARGV[0], 'r')
-uuidReq = ARGV[1]
+op = File.open(ARGV[1], 'w')
 ip.each_line do |line|
     json = JSON.parse(line.strip)
     uuid = json["UUID"]
-    if json["latencies"] != nil
+    if json["Contact"] != nil
+        type[uuid] = json["ExpType"]
+    elsif json["IcmpPing"] != nil and json["IcmpPing"]["MinRtt"] != 0
+      icmpStat[uuid] = json["IcmpPing"]["MinRtt"].round(3)
+    elsif json["latencies"] != nil
         arr = json["latencies"]
-        median = getMedian(arr)
-        ws[uuid] = median
+        clientIP[uuid] = json["IP"]
+        min = getMin(arr)
+        ws[uuid] = min.round(3)
     elsif json["HopData"] != nil
         hops = json["HopData"]
         hopVal, data = getZeroTracedata(hops)
         next if hopVal == 0
-        zerotrace[uuid] = ztResult.new(hopVal, data["RTT"])
+        zerotrace[uuid] = ztResult.new(hopVal, data["IP"], data["RTT"].round(3))
     end
 end
 
-# Print the absolute difference between zerotrace's last hop RTT (network layer) and median websocket RTT (application layer)
-# Either for the given uuid or for all experiments
-if uuidReq != nil
-    ztRTT = zerotrace[uuidReq][:rtt]
-    wsRTT = ws[uuidReq]
-    diff = (ztRTT - wsRTT).abs
-    puts "Difference in Websocket RTT and ZeroTrace RTT for UUID: " + uuidReq + " is: " + diff.to_s
-else
-    zerotrace.each do |uuid, zt|
+diffStruct = Struct.new(:UUID, :Type, :WSMinRTT, :ICMPMinRTT, :ZeroTraceRTT, :ZeroTraceHop, :ClientReached, :RTTDiff)
+darr = Array.new
+zerotrace.each do |uuid, zt|
         next if zt[:rtt] == nil
-        diff = (zt[:rtt] - ws[uuid]).abs
-        puts diff
-    end
+        if icmpStat[uuid] != nil 
+          diff = (icmpStat[uuid] - ws[uuid]).abs.round(3)
+        else
+          diff = (zt[:rtt] - ws[uuid]).abs.round(3)
+        end
+        clientReached = (clientIP[uuid] == zt[:finalIP]) 
+        darr << diffStruct.new(uuid, type[uuid], ws[uuid], icmpStat[uuid], zt[:rtt], zt[:finalHop], clientReached, diff)
+end
+darr = darr.sort_by{|v| v[:RTTDiff]}
+
+darr.each do |str|
+    op.puts str.to_h.to_json
 end
