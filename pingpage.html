@@ -42,16 +42,14 @@
         loading.style.display = "none";
       }, 120000);
 
-     function median(values){
+      function min(values){
             if (values.length ===0) return 0;
             values.sort(function(a,b){
               return a-b;
             });
-            var half = Math.floor(values.length / 2);
-            if (values.length % 2)
-              return values[half];
-            return (values[half - 1] + values[half]) / 2.0;
+            return values[0];
           }
+
       function roundToTwo(num) {    
         return +(Math.round(num + "e+2")  + "e-2");
       }
@@ -69,6 +67,7 @@
           var messages = [];
           const latencies = [];
           var statsSent = false;
+          const cooldown = 2000; // in ms
 
           socket.onopen = function () {
             socket.send(JSON.stringify({
@@ -77,16 +76,17 @@
             }));
           }
 
-          socket.onmessage = function (event) {
+          socket.onmessage = async function (event) {
             messages.push(JSON.parse(event.data));
-            if (messages.length <= 5) {
+            await new Promise(r => setTimeout(r, cooldown));
+            if (messages.length <= 10) {
               socket.send(JSON.stringify({
                 type: 'ws-latency',
                 ts: roundToTwo(performance.now()),
               }));
             } else {
               for (let i = 0; i < messages.length - 1; i++) {
-                latencies.push(roundToTwo(messages[i+1].ts - messages[i].ts));
+                latencies.push(roundToTwo(messages[i+1].ts - messages[i].ts - cooldown));
               }
               if (statsSent == false) {
               const datetimeutc = new Date().toISOString();
@@ -133,8 +133,8 @@
         document.getElementById('uuid').innerHTML = {{ .UUID }};
         document.getElementById('ip').innerHTML = {{ .IPaddr }};
         document.getElementById('values').innerHTML = latencies;
-        document.getElementById('data').innerHTML = median(latencies);
-        document.getElementById('icmp').innerHTML = {{ .AvgIcmpStat }};
+        document.getElementById('data').innerHTML = min(latencies);
+        document.getElementById('icmp').innerHTML = {{ .MinIcmpRtt }};
       });
     </script>
   </body>

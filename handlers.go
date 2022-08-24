@@ -32,7 +32,7 @@ func measureHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		details, err := validateForm(r.FormValue("email"), r.FormValue("exp_type"))
+		details, err := validateForm(r.FormValue("email"), r.FormValue("exp_type"), r.FormValue("location_vpn"), r.FormValue("location_user"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -85,9 +85,9 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		UUID:   uuid,
 		IPaddr: clientIP,
 		//RFC3339 style UTC date time with added seconds information
-		Timestamp:   time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		IcmpPing:    *icmpResults,
-		AvgIcmpStat: icmpResults.AvgRtt,
+		Timestamp:  time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+		IcmpPing:   *icmpResults,
+		MinIcmpRtt: icmpResults.MinRtt,
 	}
 
 	jsObj, err := json.Marshal(results)
