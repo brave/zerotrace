@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"net"
+	"syscall"
 	"testing"
 )
 
@@ -16,10 +18,13 @@ func TestIcmpPinger(t *testing.T) {
 
 	// Test with invalid IP
 	_, err = icmpPinger("127.0.0.0.1")
-	AssertEqualError(t, errors.New("lookup 127.0.0.0.1: no such host"), err)
+	var dnsError *net.DNSError
+	if !errors.As(err, &dnsError) {
+		t.Errorf("Expected DNS Error, got %v", err)
+	}
 
 	// Test with IP that will fail
 	_, err = icmpPinger("0.0.0.0")
-	AssertEqualError(t, errors.New("write udp 0.0.0.0:0->0.0.0.0:0: sendto: socket is not connected"), err)
+	AssertEqualError(t, syscall.ENOTCONN, err)
 
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/hex"
-	"errors"
 	"net"
 	"testing"
 	"time"
@@ -107,24 +106,23 @@ func TestProcessICMPpkt(t *testing.T) {
 	z.ClientIP = "192.168.0.1"
 	assert.PanicsWithError(t, panicChanErr, func() { _ = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
-	// Test for Invalid IP header case
+	// Test for Invalid IP header case -- truncated version of the above packet
 	hexstream_withoutIPheader := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea00000000"
 	pkt = hexToPkt(t, hexstream_withoutIPheader)
-
 	err := z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
-	AssertEqualError(t, errors.New("Invalid IP header"), err)
+	AssertError(t, err)
+	AssertEqualValue(t, "Invalid IP header", err.Error())
 
-	// Test for Invalid IP header case, where IP header length is less than expected
+	// Test for Invalid IP header case, where IP header length is less than expected (also truncated version of above packet)
 	hexstream_badIPheader := "80657ce2f49d001c7300009908004500003807cf00004001f19ec0a80001c0a800060b0077ea00000000450000570000400001"
 	pkt = hexToPkt(t, hexstream_badIPheader)
-
 	err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
-	AssertEqualError(t, errors.New("IP header unavailable"), err)
+	AssertError(t, err)
+	AssertEqualValue(t, "IP header unavailable", err.Error())
 
 	// Test with a valid ICMP echo reply packet, packet should be discarded as it is not an ICMP error packet, and IP header does not exist
 	hexstream_ICMPreply := "0aa89a80fc720ad8373494a6080045000034dfbd0000fe013e290311c4fbac1f2ab60000c41d4a1a000416feee5373d31835b8344b481dfe4d2f8301c9c6658e3f68"
 	pkt = hexToPkt(t, hexstream_ICMPreply)
-
 	err = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
 	// Assert that there is an error (which results from IPv4.DecodeFromBytes)
 	AssertError(t, err)

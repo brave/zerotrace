@@ -11,13 +11,17 @@ import (
 	"github.com/google/uuid"
 )
 
+var (
+	invalidInputErr = errors.New("Invalid Input")
+)
+
 // validateForm validates user input obtained from /measure webpage
 func validateForm(email string, expType string) (*FormDetails, error) {
 	if m, _ := regexp.MatchString(`^\w+@brave\.com$`, email); !m {
-		return nil, errors.New("Invalid Input")
+		return nil, invalidInputErr
 	}
 	if expType != "vpn" && expType != "direct" {
-		return nil, errors.New("Invalid Input")
+		return nil, invalidInputErr
 	}
 	details := FormDetails{
 		UUID:      uuid.NewString(),

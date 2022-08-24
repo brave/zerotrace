@@ -2,19 +2,19 @@ package main
 
 import (
 	"errors"
-	"github.com/google/uuid"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var (
-	invalidInputErr = errors.New("Invalid Input")
-	currentTime     = time.Now().UTC()
+	currentTime = time.Now().UTC()
 )
 
 func AssertEqualError(t *testing.T, expected error, actual error) {
 	t.Helper()
-	if expected.Error() != actual.Error() {
+	if !errors.Is(actual, expected) {
 		t.Errorf("Expected %s, got %s",
 			expected, actual)
 	}
@@ -46,15 +46,18 @@ func TestValidateForm(t *testing.T) {
 
 	// Send invalid email
 	_, err = validateForm("baduser@invalid.com", "vpn")
-	AssertEqualError(t, invalidInputErr, err)
+	AssertError(t, err)
+	AssertEqualValue(t, invalidInputErr, err)
 
 	// Send invalid expType
 	_, err = validateForm("user@brave.com", "unknown")
-	AssertEqualError(t, invalidInputErr, err)
+	AssertError(t, err)
+	AssertEqualValue(t, invalidInputErr, err)
 
 	// Send empty input
 	_, err = validateForm("", "")
-	AssertEqualError(t, invalidInputErr, err)
+	AssertError(t, err)
+	AssertEqualValue(t, invalidInputErr, err)
 }
 
 func TestGetSentTimestampfromIPId(t *testing.T) {
@@ -74,8 +77,8 @@ func TestGetSentTimestampfromIPId(t *testing.T) {
 
 	// Retrieve the sent time for a invalid IP ID that does not exist in the slice that was passed
 	_, err = getSentTimestampfromIPId(sentPktsIPId[1], 1000)
-	AssertEqualError(t, errors.New("IP Id not in sent packets"), err)
-
+	AssertError(t, err)
+	AssertEqualValue(t, "IP Id not in sent packets", err.Error())
 }
 
 func TestIsValidUUID(t *testing.T) {
