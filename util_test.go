@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"testing"
 	"time"
 
@@ -11,14 +10,6 @@ import (
 var (
 	currentTime = time.Now().UTC()
 )
-
-func AssertEqualError(t *testing.T, expected error, actual error) {
-	t.Helper()
-	if !errors.Is(actual, expected) {
-		t.Errorf("Expected %s, got %s",
-			expected, actual)
-	}
-}
 
 func AssertEqualValue(t *testing.T, expected any, actual any) {
 	t.Helper()
