@@ -93,7 +93,7 @@ func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan HopRTT) (map[int
 		}
 		if traceroute[ttlValue].IP.String() == z.ClientIP {
 			// The client has been reached and RTT has been recorded, so we can break
-			return traceroute, nil
+			break
 		}
 	}
 	return traceroute, nil
