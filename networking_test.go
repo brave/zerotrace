@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"net"
-	"syscall"
 	"testing"
 )
 
@@ -22,9 +21,4 @@ func TestIcmpPinger(t *testing.T) {
 	if !errors.As(err, &dnsError) {
 		t.Errorf("Expected DNS Error, got %v", err)
 	}
-
-	// Test with IP that will fail
-	_, err = icmpPinger("0.0.0.0")
-	AssertEqualError(t, syscall.ENOTCONN, err)
-
 }
