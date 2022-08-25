@@ -43,7 +43,7 @@ func measureHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		resultString := string(jsObj)
-		InfoLogger.Println(resultString)
+		l.Println(resultString)
 		http.Redirect(w, r, "/ping?uuid="+details.UUID, 302)
 	}
 }
@@ -77,7 +77,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 
 	icmpResults, err := icmpPinger(clientIP)
 	if err != nil {
-		ErrLogger.Println("ICMP Ping Error: ", err)
+		l.Println("ICMP Ping Error: ", err)
 	}
 
 	// Combine all results
@@ -96,7 +96,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resultString := string(jsObj)
-	InfoLogger.Println(resultString)
+	l.Println(resultString)
 	var WebTemplate, _ = template.ParseFiles(path.Join(directoryPath, "pingpage.html"))
 	if err := WebTemplate.Execute(w, results); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -121,7 +121,7 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	var upgrader = websocket.Upgrader{}
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		ErrLogger.Println("upgrade:", err)
+		l.Println("upgrade:", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -132,7 +132,7 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = zeroTraceInstance.Run()
 	if err != nil {
-		ErrLogger.Println("ZeroTrace Run Error: ", err)
+		l.Println("ZeroTrace Run Error: ", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -145,7 +145,7 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	var upgrader = websocket.Upgrader{}
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		ErrLogger.Println("upgrade:", err)
+		l.Println("upgrade:", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 
@@ -154,26 +154,26 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	for {
 		mt, message, err := c.ReadMessage()
 		if err != nil {
-			ErrLogger.Println("read:", err)
+			l.Println("read:", err)
 			break
 		}
 		// ReadMessage() returns messageType int, p []byte, err error]
 		var wsData map[string]interface{}
 		if err := json.Unmarshal(message, &wsData); err != nil {
-			ErrLogger.Println("unmarshal:", err)
+			l.Println("unmarshal:", err)
 			break
 		}
 		if wsData["type"] != "ws-latency" {
 			if wsUUID, ok := wsData["UUID"].(string); ok {
 				// Only log the final message with all latencies calculated, and don't log other unsolicited echo messages
 				if isValidUUID(string(wsUUID)) {
-					InfoLogger.Println(string(message))
+					l.Println(string(message))
 				}
 			}
 		}
 		err = c.WriteMessage(mt, message)
 		if err != nil {
-			ErrLogger.Println("write:", err)
+			l.Println("write:", err)
 			break
 		}
 	}

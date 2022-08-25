@@ -76,7 +76,7 @@ func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan HopRTT) (map[int
 	traceroute := make(map[int]HopRTT)
 	for ttlValue := beginTTLValue; ttlValue <= maxTTLHops; ttlValue++ {
 		if err := z.sendTracePacket(ttlValue); err != nil {
-			ErrLogger.Println("Send Trace Packet Error: ", err)
+			l.Println("Send Trace Packet Error: ", err)
 			return traceroute, err
 		}
 		z.CurrTTLIndicator = ttlValue
@@ -86,7 +86,7 @@ func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan HopRTT) (map[int
 		case hopData := <-recvdHopData:
 			traceroute[ttlValue] = hopData
 		case <-ticker.C:
-			ErrLogger.Println("Traceroute Hop Timeout at Hop ", ttlValue, ". Moving on to the next hop.")
+			l.Println("Traceroute Hop Timeout at Hop ", ttlValue, ". Moving on to the next hop.")
 			var empty net.IP
 			traceroute[ttlValue] = HopRTT{empty, 0}
 			continue
@@ -118,7 +118,7 @@ func (z *zeroTrace) Run() error {
 		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
 		HopData:   traceroute,
 	}
-	logAsJson(results, InfoLogger)
+	logAsJson(results)
 
 	quit <- true
 	return err
@@ -226,7 +226,7 @@ func (z *zeroTrace) sendTracePacket(ttlValue int) error {
 	if _, err := tcpConn.Write(outgoingPacket); err != nil {
 		return err
 	}
-	ErrLogger.Println("Sent ", ttlValue, " packet")
+	l.Println("Sent ", ttlValue, " packet")
 	return nil
 }
 
