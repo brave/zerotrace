@@ -27,6 +27,10 @@
         margin: 10px;
         display: inline-block;
       }
+      .required:after {
+        content:" *";
+        color: red;
+      }
     </style>
 
   </head>
@@ -34,31 +38,31 @@
   <body>
     <h1>Experiment Details</h1>
     <form method="POST">
-        <label>Brave Email ID (username@brave.com):</label><br>
-        <input type="text" placeholder="username@brave.com" name="email"><br />
-        <label>Are you running this on a:</label><br>
-        <input type="radio" id="device" name="device" value="mobile">
+        <label class="required">Brave Email ID (username@brave.com):</label><br>
+        <input type="text" placeholder="username@brave.com" name="email" required><br />
+        <label class="required">Are you running this on a:</label><br>
+        <input type="radio" id="device" name="device" value="mobile" required>
         <label for="mobile">Mobile Device</label><br>
-        <input type="radio" id="device" name="device" value="desktop" >
+        <input type="radio" id="device" name="device" value="desktop" required>
         <label for="desktop">Desktop / Laptop</label><br>
-        <label>Are you connecting to us through:</label><br>
-        <input type="radio" id="exp_type" name="exp_type" value="direct" onclick="document.getElementById('locinfo').style.display='none'">
+        <label class="required">Are you connecting to us through:</label><br>
+        <input type="radio" id="exp_type" name="exp_type" value="direct" onclick="document.getElementById('locinfo').style.display='none'" required>
         <label for="direct">Direct Connection</label><br>
-        <input type="radio" id="exp_type" name="exp_type" value="vpn" onclick="document.getElementById('locinfo').style.display='block'">
+        <input type="radio" id="exp_type" name="exp_type" value="vpn" onclick="document.getElementById('locinfo').style.display='block'" required>
         <label for="vpn">VPN</label><br>
         <div id="locinfo" style="display:none;">
-          <label>Location of VPN server connected to (if any):</label><br>
-          <input type="text" name="location_vpn" size="30" placeholder="City, state (if applicable), country"><br />
-          <label>Your location:</label><br>
-          <input type="text" name="location_user" size="30" placeholder="City, state (if applicable), country"><br />
+          <label class="required">Location of VPN server connected to (if any):</label><br>
+          <input type="text" name="location_vpn" size="30" placeholder="City, state (if applicable), country" required><br />
+          <label class="required">Your location:</label><br>
+          <input type="text" name="location_user" size="30" placeholder="City, state (if applicable), country" required><br />
           <label>We only use this information to reason about the measured latencies and physical distance.</label><br>
           <label>Please enter <i>"unknown"</i> if you are unsure about your VPN server's location, or <i>"best available"</i> if you chose that in your VPN settings.</label><br>
         </div><br />
         <label>Contact @reethika and @phw on Slack if you have any questions.</label><br>
-        <input type="submit" onclick="submitHandler()">
+        <input type="submit" onsubmit="submitHandler()">
         <div id="loading" style="display:none;">
           <button class="buttonload">
-            <i class="fa fa-spinner fa-spin"></i>Starting Measurements...
+            <i class="fa fa-spinner fa-spin"></i>If you have filled the input form, you will be redirected...
           </button>
         </div>
     </form>
