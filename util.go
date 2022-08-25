@@ -35,7 +35,7 @@ func validateForm(email string, expType string, device string, locationVPN strin
 	if expType != "vpn" && expType != "direct" {
 		return nil, invalidInputErr
 	}
-	if device != "mobile" && expType != "desktop" {
+	if device != "mobile" && device != "desktop" {
 		return nil, invalidInputErr
 	}
 	if match, _ := regexp.MatchString(`^[\w,.'";:\s\d(){}]*$`, locationVPN); !match {
