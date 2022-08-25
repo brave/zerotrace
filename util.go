@@ -28,11 +28,14 @@ func logAsJson(obj any, GivenLogger *log.Logger) {
 }
 
 // validateForm validates user input obtained from /measure webpage
-func validateForm(email string, expType string, locationVPN string, locationUser string) (*FormDetails, error) {
+func validateForm(email string, expType string, device string, locationVPN string, locationUser string) (*FormDetails, error) {
 	if match, _ := regexp.MatchString(`^\w+@brave\.com$`, email); !match {
 		return nil, invalidInputErr
 	}
 	if expType != "vpn" && expType != "direct" {
+		return nil, invalidInputErr
+	}
+	if device != "mobile" && expType != "desktop" {
 		return nil, invalidInputErr
 	}
 	if match, _ := regexp.MatchString(`^[\w,.'";:\s\d(){}]*$`, locationVPN); !match {
@@ -47,6 +50,7 @@ func validateForm(email string, expType string, locationVPN string, locationUser
 		Timestamp:    time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
 		Contact:      email,
 		ExpType:      expType,
+		Device:       device,
 		LocationVPN:  locationVPN,
 		LocationUser: locationUser,
 	}

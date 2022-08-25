@@ -36,6 +36,11 @@
     <form method="POST">
         <label>Brave Email ID (username@brave.com):</label><br>
         <input type="text" placeholder="username@brave.com" name="email"><br />
+        <label>Are you running this on a:</label><br>
+        <input type="radio" id="device" name="device" value="mobile">
+        <label for="mobile">Mobile Device</label><br>
+        <input type="radio" id="device" name="device" value="desktop" >
+        <label for="desktop">Desktop / Laptop</label><br>
         <label>Are you connecting to us through:</label><br>
         <input type="radio" id="exp_type" name="exp_type" value="direct" onclick="document.getElementById('locinfo').style.display='none'">
         <label for="direct">Direct Connection</label><br>

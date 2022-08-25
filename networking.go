@@ -16,6 +16,7 @@ type FormDetails struct {
 	Timestamp    string
 	Contact      string
 	ExpType      string
+	Device       string
 	LocationVPN  string
 	LocationUser string
 }
