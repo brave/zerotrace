@@ -9,6 +9,12 @@ import (
 	"net/http"
 	"os"
 	"path"
+
+	"github.com/google/gopacket/pcap"
+)
+
+const (
+	ifaceNameAny = "any"
 )
 
 var (
@@ -35,13 +41,29 @@ func redirectToTLS(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
 }
 
+// hasAnyInterface returns true if the system has a networking interface called
+// "any".
+func hasAnyInterface() bool {
+	ifaces, err := pcap.FindAllDevs()
+	if err != nil {
+		return false
+	}
+
+	for _, iface := range ifaces {
+		if iface.Name == ifaceNameAny {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 	var logfilePath string
 	var errlogPath string
 	flag.StringVar(&directoryPath, "dirpath", "", "Path where this code lives, used to index the html file paths")
 	flag.StringVar(&logfilePath, "logfile", "logFile.jsonl", "Path to log file")
 	flag.StringVar(&errlogPath, "errlog", "errlog.txt", "Path to err log file")
-	flag.StringVar(&deviceName, "deviceName", "eth0", "Interface name to listen on, default: eth0")
+	flag.StringVar(&ifaceName, "iface", ifaceNameAny, "Interface name to listen on, default: any")
 	flag.Parse()
 	file, err := os.OpenFile(logfilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
@@ -62,6 +84,10 @@ func main() {
 	http.HandleFunc("/echo", echoHandler)
 	http.HandleFunc("/trace", traceHandler)
 	http.HandleFunc("/measure", measureHandler)
+
+	if ifaceName == ifaceNameAny && !hasAnyInterface() {
+		log.Fatal("We were told to use the 'any' interface but it's not present.")
+	}
 
 	go func() {
 		if err := http.ListenAndServe(":80", http.HandlerFunc(redirectToTLS)); err != nil {

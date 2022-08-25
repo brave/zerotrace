@@ -128,7 +128,7 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 	myConn := c.UnderlyingConn()
 
-	zeroTraceInstance := newZeroTrace(deviceName, myConn, uuid)
+	zeroTraceInstance := newZeroTrace(ifaceName, myConn, uuid)
 
 	err = zeroTraceInstance.Run()
 	if err != nil {
