@@ -37,13 +37,7 @@ func measureHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		jsObj, err := json.Marshal(details)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		resultString := string(jsObj)
-		l.Println(resultString)
+		logAsJson(details)
 		http.Redirect(w, r, "/ping?uuid="+details.UUID, 302)
 	}
 }
@@ -89,14 +83,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		IcmpPing:   *icmpResults,
 		MinIcmpRtt: icmpResults.MinRtt,
 	}
-
-	jsObj, err := json.Marshal(results)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	resultString := string(jsObj)
-	l.Println(resultString)
+	logAsJson(results)
 	var WebTemplate, _ = template.ParseFiles(path.Join(directoryPath, "pingpage.html"))
 	if err := WebTemplate.Execute(w, results); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
