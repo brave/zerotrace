@@ -18,8 +18,7 @@ const (
 )
 
 var (
-	directoryPath string
-	l             = log.New(os.Stderr, "latsrv: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
+	l = log.New(os.Stderr, "latsrv: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
 )
 
 // checkHTTPParams checks if request method is GET, and ensures URL path is right
@@ -57,7 +56,6 @@ func hasAnyInterface() bool {
 }
 
 func main() {
-	flag.StringVar(&directoryPath, "dirpath", "", "Path where this code lives, used to index the html file paths")
 	flag.StringVar(&ifaceName, "iface", ifaceNameAny, "Interface name to listen on, default: any")
 	flag.Parse()
 

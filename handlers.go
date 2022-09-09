@@ -2,10 +2,9 @@ package main
 
 import (
 	"encoding/json"
-	"html/template"
+	"fmt"
 	"net"
 	"net/http"
-	"path"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -13,8 +12,7 @@ import (
 
 // serveFormTemplate serves the form
 func serveFormTemplate(w http.ResponseWriter) {
-	var WebTemplate, _ = template.ParseFiles(path.Join(directoryPath, "measure.html"))
-	if err := WebTemplate.Execute(w, nil); err != nil {
+	if err := measureTemplate.Execute(w, nil); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -47,8 +45,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	if checkHTTPParams(w, r, "/") {
 		return
 	}
-	path := path.Join(directoryPath, "/index.html")
-	http.ServeFile(w, r, path)
+	fmt.Fprint(w, indexPage)
 }
 
 // pingHandler for ICMP measurements which also serves the webpage via a template
@@ -84,8 +81,7 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		MinIcmpRtt: icmpResults.MinRtt,
 	}
 	logAsJson(results)
-	var WebTemplate, _ = template.ParseFiles(path.Join(directoryPath, "pingpage.html"))
-	if err := WebTemplate.Execute(w, results); err != nil {
+	if err := pingTemplate.Execute(w, results); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
