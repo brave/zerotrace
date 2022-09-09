@@ -20,9 +20,6 @@ func serveFormTemplate(w http.ResponseWriter) {
 
 // measureHandler serves the form which collects user's contact data and ground-truth (VPN/Direct) before experiment begins
 func measureHandler(w http.ResponseWriter, r *http.Request) {
-	if checkHTTPParams(w, r, "/measure") {
-		return
-	}
 	if r.Method == "GET" {
 		serveFormTemplate(w)
 	} else {
@@ -42,17 +39,11 @@ func measureHandler(w http.ResponseWriter, r *http.Request) {
 
 // indexHandler serves the default index page with reasons for scanning IPs on this server and point of contact
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	if checkHTTPParams(w, r, "/") {
-		return
-	}
 	fmt.Fprint(w, indexPage)
 }
 
 // pingHandler for ICMP measurements which also serves the webpage via a template
 func pingHandler(w http.ResponseWriter, r *http.Request) {
-	if checkHTTPParams(w, r, "/ping") {
-		return
-	}
 	var uuid string
 	for k, v := range r.URL.Query() {
 		if k == "uuid" && isValidUUID(v[0]) {
@@ -89,9 +80,6 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 
 // traceHandler speaks WebSocket for extracting underlying connection to use for 0trace
 func traceHandler(w http.ResponseWriter, r *http.Request) {
-	if checkHTTPParams(w, r, "/trace") {
-		return
-	}
 	var uuid string
 	for k, v := range r.URL.Query() {
 		if k == "uuid" && isValidUUID(v[0]) {
@@ -122,9 +110,6 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 
 // echoHandler for the echo webserver that speaks WebSocket
 func echoHandler(w http.ResponseWriter, r *http.Request) {
-	if checkHTTPParams(w, r, "/echo") {
-		return
-	}
 	var upgrader = websocket.Upgrader{}
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {

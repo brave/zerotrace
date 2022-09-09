@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/go-chi/chi"
 	"github.com/google/gopacket/pcap"
 )
 
@@ -19,19 +20,6 @@ const (
 var (
 	l = log.New(os.Stderr, "latsrv: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
 )
-
-// checkHTTPParams checks if request method is GET, and ensures URL path is right
-func checkHTTPParams(w http.ResponseWriter, r *http.Request, pathstring string) bool {
-	if r.URL.Path != pathstring {
-		http.NotFound(w, r)
-		return true
-	}
-	if r.Method != "GET" && pathstring != "/measure" {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return true
-	}
-	return false
-}
 
 // hasAnyInterface returns true if the system has a networking interface called
 // "any".
@@ -57,16 +45,21 @@ func main() {
 	flag.StringVar(&addr, "addr", ":8080", "Address to listen on, default: :8080")
 	flag.Parse()
 
-	http.HandleFunc("/", indexHandler)
-	http.HandleFunc("/ping", pingHandler)
-	http.HandleFunc("/echo", echoHandler)
-	http.HandleFunc("/trace", traceHandler)
-	http.HandleFunc("/measure", measureHandler)
-
 	if ifaceName == ifaceNameAny && !hasAnyInterface() {
 		l.Fatal("We were told to use the 'any' interface but it's not present.")
 	}
 
+	router := chi.NewRouter()
+	router.Get("/", indexHandler)
+	router.Get("/ping", pingHandler)
+	router.Get("/echo", echoHandler)
+	router.Get("/trace", traceHandler)
+	router.Post("/measure", measureHandler)
+	srv := http.Server{
+		Addr:    addr,
+		Handler: router,
+	}
+
 	l.Printf("Starting Web service to listen on %s.", addr)
-	l.Println(http.ListenAndServe(addr, nil))
+	l.Println(srv.ListenAndServe())
 }
