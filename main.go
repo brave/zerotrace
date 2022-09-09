@@ -52,6 +52,7 @@ func hasAnyInterface() bool {
 }
 
 func main() {
+	var addr string
 	flag.StringVar(&ifaceName, "iface", ifaceNameAny, "Interface name to listen on, default: any")
 	flag.StringVar(&addr, "addr", ":8080", "Address to listen on, default: :8080")
 	flag.Parse()
@@ -66,5 +67,6 @@ func main() {
 		l.Fatal("We were told to use the 'any' interface but it's not present.")
 	}
 
-	l.Println(http.ListenAndServe(":8443", nil))
+	l.Printf("Starting Web service to listen on %s.", addr)
+	l.Println(http.ListenAndServe(addr, nil))
 }
