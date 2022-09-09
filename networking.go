@@ -40,20 +40,29 @@ type Results struct {
 	MinIcmpRtt float64
 }
 
-// icmpPinger sends ICMP pings and returns statistics
-func icmpPinger(ip string) (*PingMsmt, error) {
-	pinger, err := ping.NewPinger(ip)
+// pingAddr sends ICMP pings to the given address and returns ping
+// statistics.
+func pingAddr(addr string) (*PingMsmt, error) {
+	pinger, err := ping.NewPinger(addr)
 	if err != nil {
 		return nil, err
 	}
+
 	pinger.Count = icmpCount
 	pinger.Timeout = icmpTimeout
-	err = pinger.Run() // Blocks until finished.
-	if err != nil {
+	if err = pinger.Run(); err != nil { // Blocks until finished.
 		return nil, err
 	}
+
 	stat := pinger.Statistics()
-	pingMsmt := PingMsmt{ip, stat.PacketsSent, stat.PacketsRecv, stat.PacketLoss, fmtTimeMs(stat.MinRtt),
-		fmtTimeMs(stat.AvgRtt), fmtTimeMs(stat.MaxRtt), fmtTimeMs(stat.StdDevRtt)}
-	return &pingMsmt, nil
+	return &PingMsmt{
+		addr,
+		stat.PacketsSent,
+		stat.PacketsRecv,
+		stat.PacketLoss,
+		fmtTimeMs(stat.MinRtt),
+		fmtTimeMs(stat.AvgRtt),
+		fmtTimeMs(stat.MaxRtt),
+		fmtTimeMs(stat.StdDevRtt),
+	}, nil
 }
