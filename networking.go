@@ -7,7 +7,9 @@ import (
 )
 
 const (
-	icmpCount   = 5
+	// The number of ICMP packets we send to a client.
+	icmpCount = 5
+	// The time we're willing to wait for an ICMP response.
 	icmpTimeout = time.Second * 10
 )
 
