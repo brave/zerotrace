@@ -71,7 +71,7 @@ func main() {
 	http.HandleFunc("/measure", measureHandler)
 
 	if ifaceName == ifaceNameAny && !hasAnyInterface() {
-		log.Fatal("We were told to use the 'any' interface but it's not present.")
+		l.Fatal("We were told to use the 'any' interface but it's not present.")
 	}
 
 	go func() {
