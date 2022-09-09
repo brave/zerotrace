@@ -19,8 +19,7 @@ const (
 
 var (
 	directoryPath string
-	InfoLogger    *log.Logger
-	ErrLogger     *log.Logger
+	l             = log.New(os.Stderr, "latsrv: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
 )
 
 // checkHTTPParams checks if request method is GET, and ensures URL path is right
@@ -58,24 +57,10 @@ func hasAnyInterface() bool {
 }
 
 func main() {
-	var logfilePath string
-	var errlogPath string
 	flag.StringVar(&directoryPath, "dirpath", "", "Path where this code lives, used to index the html file paths")
-	flag.StringVar(&logfilePath, "logfile", "logFile.jsonl", "Path to log file")
-	flag.StringVar(&errlogPath, "errlog", "errlog.txt", "Path to err log file")
 	flag.StringVar(&ifaceName, "iface", ifaceNameAny, "Interface name to listen on, default: any")
 	flag.Parse()
-	file, err := os.OpenFile(logfilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Fatal(err)
-	}
-	errFile, err := os.OpenFile(errlogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Fatal(err)
-	}
 
-	InfoLogger = log.New(file, "", 0)
-	ErrLogger = log.New(errFile, "", log.Ldate|log.Ltime)
 	certPath := "/etc/letsencrypt/live/test.reethika.info/"
 	fullChain := path.Join(certPath, "fullchain.pem")
 	privKey := path.Join(certPath, "privkey.pem")
@@ -91,8 +76,8 @@ func main() {
 
 	go func() {
 		if err := http.ListenAndServe(":80", http.HandlerFunc(redirectToTLS)); err != nil {
-			log.Fatalf("ListenAndServe port 80 error: %v", err)
+			l.Printf("ListenAndServe port 80 error: %v", err)
 		}
 	}()
-	ErrLogger.Fatal(http.ListenAndServeTLS(":443", fullChain, privKey, nil))
+	l.Println(http.ListenAndServeTLS(":443", fullChain, privKey, nil))
 }
