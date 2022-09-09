@@ -24,7 +24,13 @@ func measureHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		details, err := validateForm(r.FormValue("email"), r.FormValue("exp_type"), r.FormValue("device"), r.FormValue("location_vpn"), r.FormValue("location_user"))
+		details, err := validateForm(
+			r.FormValue("email"),
+			r.FormValue("exp_type"),
+			r.FormValue("device"),
+			r.FormValue("location_vpn"),
+			r.FormValue("location_user"),
+		)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -143,7 +149,8 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if wsData["type"] != "ws-latency" {
 			if wsUUID, ok := wsData["UUID"].(string); ok {
-				// Only log the final message with all latencies calculated, and don't log other unsolicited echo messages
+				// Only log the final message with all latencies calculated,
+				// and don't log other unsolicited echo messages
 				if isValidUUID(string(wsUUID)) {
 					l.Println(string(message))
 				}
