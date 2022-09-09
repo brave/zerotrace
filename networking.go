@@ -23,28 +23,15 @@ type FormDetails struct {
 	LocationUser string
 }
 
-type PingMsmt struct {
-	IP        string
-	PktSent   int
-	PktRecv   int
-	PktLoss   float64
-	MinRtt    float64
-	AvgRtt    float64
-	MaxRtt    float64
-	StdDevRtt float64
-}
-
 type Results struct {
-	UUID       string
-	IPaddr     string
-	Timestamp  string
-	IcmpPing   PingMsmt
-	MinIcmpRtt float64
+	UUID      string
+	Timestamp string
+	PingStats *ping.Statistics
 }
 
 // pingAddr sends ICMP pings to the given address and returns ping
 // statistics.
-func pingAddr(addr string) (*PingMsmt, error) {
+func pingAddr(addr string) (*ping.Statistics, error) {
 	pinger, err := ping.NewPinger(addr)
 	if err != nil {
 		return nil, err
@@ -56,15 +43,5 @@ func pingAddr(addr string) (*PingMsmt, error) {
 		return nil, err
 	}
 
-	stat := pinger.Statistics()
-	return &PingMsmt{
-		addr,
-		stat.PacketsSent,
-		stat.PacketsRecv,
-		stat.PacketLoss,
-		fmtTimeMs(stat.MinRtt),
-		fmtTimeMs(stat.AvgRtt),
-		fmtTimeMs(stat.MaxRtt),
-		fmtTimeMs(stat.StdDevRtt),
-	}, nil
+	return pinger.Statistics(), nil
 }

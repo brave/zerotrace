@@ -68,19 +68,17 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
 
-	icmpResults, err := pingAddr(clientIP)
+	pingStats, err := pingAddr(clientIP)
 	if err != nil {
 		l.Println("ICMP Ping Error: ", err)
 	}
 
 	// Combine all results
 	results := Results{
-		UUID:   uuid,
-		IPaddr: clientIP,
+		UUID: uuid,
 		//RFC3339 style UTC date time with added seconds information
-		Timestamp:  time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		IcmpPing:   *icmpResults,
-		MinIcmpRtt: icmpResults.MinRtt,
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+		PingStats: pingStats,
 	}
 	logAsJson(results)
 	if err := pingTemplate.Execute(w, results); err != nil {
