@@ -26,13 +26,13 @@ var (
 	ifaceName string
 )
 
-// SentPacketData struct keeps track of the IP ID value and Sent time for each TCP packet sent
-type SentPacketData struct {
+// sentPacketData struct keeps track of the IP ID value and Sent time for each TCP packet sent
+type sentPacketData struct {
 	HopIPId     uint16
 	HopSentTime time.Time
 }
 
-type HopRTT struct {
+type hopRTT struct {
 	IP  net.IP
 	RTT float64
 }
@@ -44,14 +44,14 @@ type zeroTrace struct {
 	PcapHdl          *pcap.Handle
 	ClientIP         string
 	ClientPort       int
-	SentPktsIPId     map[int][]SentPacketData
+	SentPktsIPId     map[int][]sentPacketData
 	CurrTTLIndicator int
 }
 
-type TracerouteResults struct {
+type tracerouteResults struct {
 	UUID      string
 	Timestamp string
-	HopData   map[int]HopRTT
+	HopData   map[int]hopRTT
 }
 
 // newZeroTrace instantiates and returns a new zeroTrace struct with the interface, net.Conn underlying connection, client IP and port data
@@ -66,13 +66,13 @@ func newZeroTrace(iface string, conn net.Conn, uuid string) *zeroTrace {
 		UUID:         uuid,
 		ClientIP:     clientIP,
 		ClientPort:   clientPort,
-		SentPktsIPId: make(map[int][]SentPacketData),
+		SentPktsIPId: make(map[int][]sentPacketData),
 	}
 }
 
 // sendTTLIncrementingProbes sends probes of incrementing TTL, await response from channel that identifies the hop which sent the ICMP response and stops sending any more probes if connection errors out
-func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan HopRTT) (map[int]HopRTT, error) {
-	traceroute := make(map[int]HopRTT)
+func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan hopRTT) (map[int]hopRTT, error) {
+	traceroute := make(map[int]hopRTT)
 	for ttlValue := beginTTLValue; ttlValue <= maxTTLHops; ttlValue++ {
 		if err := z.sendTracePacket(ttlValue); err != nil {
 			l.Println("Send Trace Packet Error: ", err)
@@ -87,7 +87,7 @@ func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan HopRTT) (map[int
 		case <-ticker.C:
 			l.Println("Traceroute Hop Timeout at Hop ", ttlValue, ". Moving on to the next hop.")
 			var empty net.IP
-			traceroute[ttlValue] = HopRTT{empty, 0}
+			traceroute[ttlValue] = hopRTT{empty, 0}
 			continue
 		}
 		if traceroute[ttlValue].IP.String() == z.ClientIP {
@@ -106,13 +106,13 @@ func (z *zeroTrace) Run() error {
 		return err
 	}
 
-	recvdHopChan := make(chan HopRTT)
+	recvdHopChan := make(chan hopRTT)
 	quit := make(chan bool)
 	// Fire go routine to start listening for packets on the handler before sending TTL limited probes
 	go z.recvPackets(z.PcapHdl, recvdHopChan, quit)
 
 	traceroute, err := z.sendTTLIncrementingProbes(recvdHopChan)
-	results := TracerouteResults{
+	results := tracerouteResults{
 		UUID:      z.UUID,
 		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
 		HopData:   traceroute,
@@ -136,14 +136,14 @@ func (z *zeroTrace) setupPcapAndFilter() (*pcap.Handle, error) {
 }
 
 // recvPackets listens on the provided pcap handler for packets sent, processes TCP and ICMP packets differently, and aborts if signalled
-func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan HopRTT, quit chan bool) {
+func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan hopRTT, quit chan bool) {
 	tempConn := z.Conn.(*tls.Conn)
 	tcpConn := tempConn.NetConn()
 
 	localSrcAddr := tcpConn.LocalAddr().String()
 	serverIP, _, _ := net.SplitHostPort(localSrcAddr)
 
-	z.SentPktsIPId = make(map[int][]SentPacketData)
+	z.SentPktsIPId = make(map[int][]sentPacketData)
 	packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
 	var counter int
 
@@ -234,7 +234,7 @@ func (z *zeroTrace) sendTracePacket(ttlValue int) error {
 // it extracts the Hop RTT data, and passes the extracted data to the hops channel if:
 // the packet contains the TTL Exceeded error code, and the SentPktsIPId map contains the found IP Id at the current TTL,
 // or errors if any
-func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter *int, hops chan HopRTT) error {
+func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter *int, hops chan hopRTT) error {
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
 	ipl, _ := ipLayer.(*layers.IPv4)
 	currHop := ipl.SrcIP
@@ -254,7 +254,7 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 	ipid := ipHeaderIcmp.Id
 	recvTimestamp := packet.Metadata().Timestamp
 	if currHop.String() == z.ClientIP {
-		val := HopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, true)}
+		val := hopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, true)}
 		// May recieve ICMP responses from Client IP during the connection that are unrelated to 0trace so check for error from extractTracerouteHopRTT
 		if val.RTT != 0 {
 			hops <- val
@@ -263,7 +263,7 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 	}
 	if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
 		if z.SentPktsIPId[currTTL] != nil && sliceContains(z.SentPktsIPId[currTTL], ipid) {
-			hops <- HopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, false)}
+			hops <- hopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, false)}
 			*counter = currTTL
 		}
 	}
@@ -284,7 +284,7 @@ func (z *zeroTrace) processTCPpkt(packet gopacket.Packet, serverIP string) {
 		sentTime := packet.Metadata().Timestamp
 		currIPId := ipl.Id
 		if !sliceContains(z.SentPktsIPId[packetTTL], currIPId) {
-			z.SentPktsIPId[packetTTL] = append(z.SentPktsIPId[packetTTL], SentPacketData{HopIPId: currIPId, HopSentTime: sentTime})
+			z.SentPktsIPId[packetTTL] = append(z.SentPktsIPId[packetTTL], sentPacketData{HopIPId: currIPId, HopSentTime: sentTime})
 		}
 	}
 }

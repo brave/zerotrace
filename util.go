@@ -16,7 +16,7 @@ var (
 	invalidInputErr = errors.New("Invalid Input")
 )
 
-type FormDetails struct {
+type formDetails struct {
 	UUID         string
 	Timestamp    string
 	Contact      string
@@ -37,7 +37,7 @@ func logAsJson(obj any) {
 }
 
 // validateForm validates user input obtained from /measure webpage
-func validateForm(email string, expType string, device string, locationVPN string, locationUser string) (*FormDetails, error) {
+func validateForm(email string, expType string, device string, locationVPN string, locationUser string) (*formDetails, error) {
 	if match, _ := regexp.MatchString(`^\w+@brave\.com$`, email); !match {
 		return nil, invalidInputErr
 	}
@@ -54,7 +54,7 @@ func validateForm(email string, expType string, device string, locationVPN strin
 		return nil, invalidInputErr
 	}
 
-	details := FormDetails{
+	details := formDetails{
 		UUID:         uuid.NewString(),
 		Timestamp:    time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
 		Contact:      email,
@@ -78,7 +78,7 @@ func fmtTimeMs(value time.Duration) float64 {
 }
 
 // getSentTimestampfromIPId traverses the []SentPacketData slice and returns the HopSentTime associated with the provided ipid, and error if any
-func getSentTimestampfromIPId(sentDataSlice []SentPacketData, ipid uint16) (time.Time, error) {
+func getSentTimestampfromIPId(sentDataSlice []sentPacketData, ipid uint16) (time.Time, error) {
 	for _, v := range sentDataSlice {
 		if v.HopIPId == ipid {
 			return v.HopSentTime, nil
@@ -108,7 +108,7 @@ func getHeaderFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, error) {
 }
 
 // sliceContains checks if a particular IP Id (uint16 in layers.IPv4) is present in the slice of IP Ids we provide
-func sliceContains(slice []SentPacketData, value uint16) bool {
+func sliceContains(slice []sentPacketData, value uint16) bool {
 	for _, v := range slice {
 		if v.HopIPId == value {
 			return true
