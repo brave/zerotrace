@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
 
 	"github.com/google/gopacket/pcap"
 )
@@ -34,11 +33,6 @@ func checkHTTPParams(w http.ResponseWriter, r *http.Request, pathstring string) 
 	return false
 }
 
-// redirectToTLS helps redirect HTTP connections to HTTPS
-func redirectToTLS(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
-}
-
 // hasAnyInterface returns true if the system has a networking interface called
 // "any".
 func hasAnyInterface() bool {
@@ -59,11 +53,9 @@ func hasAnyInterface() bool {
 
 func main() {
 	flag.StringVar(&ifaceName, "iface", ifaceNameAny, "Interface name to listen on, default: any")
+	flag.StringVar(&addr, "addr", ":8080", "Address to listen on, default: :8080")
 	flag.Parse()
 
-	certPath := "/etc/letsencrypt/live/test.reethika.info/"
-	fullChain := path.Join(certPath, "fullchain.pem")
-	privKey := path.Join(certPath, "privkey.pem")
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/ping", pingHandler)
 	http.HandleFunc("/echo", echoHandler)
@@ -74,10 +66,5 @@ func main() {
 		l.Fatal("We were told to use the 'any' interface but it's not present.")
 	}
 
-	go func() {
-		if err := http.ListenAndServe(":80", http.HandlerFunc(redirectToTLS)); err != nil {
-			l.Printf("ListenAndServe port 80 error: %v", err)
-		}
-	}()
-	l.Println(http.ListenAndServeTLS(":443", fullChain, privKey, nil))
+	l.Println(http.ListenAndServe(":8443", nil))
 }
