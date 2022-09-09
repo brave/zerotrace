@@ -18,7 +18,9 @@ func serveFormTemplate(w http.ResponseWriter) {
 	}
 }
 
-// measureHandler serves the form which collects user's contact data and ground-truth (VPN/Direct) before experiment begins
+// measureHandler serves the form that collects the user's contact data and
+// ground truth (i.e., if we are dealing with a VPN or a direct connection)
+// before the experiment begins.
 func measureHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		serveFormTemplate(w)
@@ -37,12 +39,20 @@ func measureHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// indexHandler serves the default index page with reasons for scanning IPs on this server and point of contact
+// indexHandler serves the default index page which explains what measurements
+// we are running.
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, indexPage)
 }
 
-// pingHandler for ICMP measurements which also serves the webpage via a template
+// pingHandler implements a one-off measurement for the connecting client.  It
+// does the following:
+//
+//   1. Send ICMP packets to the client to determine the RTT.
+//   2. Serve the client JavaScript that initiates a WebSocket connection with
+//      us, again to determine the application-level RTT.
+//   3. Start another WebSocket connection to run a 0trace measurement, to
+//      determine an even more accurate RTT.
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 	var uuid string
 	for k, v := range r.URL.Query() {
@@ -78,7 +88,10 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// traceHandler speaks WebSocket for extracting underlying connection to use for 0trace
+// traceHandler accepts incoming WebSocket connections and, once one is
+// established, uses it to run a 0trace measurement to the client.  This is
+// likely to corrupt the underlying TCP connection but we don't care about
+// that.
 func traceHandler(w http.ResponseWriter, r *http.Request) {
 	var uuid string
 	for k, v := range r.URL.Query() {
@@ -108,7 +121,9 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// echoHandler for the echo webserver that speaks WebSocket
+// echoHandler accepts incoming WebSocket connections and determines the round
+// trip time between the client and us by taking advantage of a handful of
+// "ping" messages.
 func echoHandler(w http.ResponseWriter, r *http.Request) {
 	var upgrader = websocket.Upgrader{}
 	c, err := upgrader.Upgrade(w, r, nil)
