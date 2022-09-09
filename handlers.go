@@ -10,20 +10,15 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// serveFormTemplate serves the form
-func serveFormTemplate(w http.ResponseWriter) {
-	if err := measureTemplate.Execute(w, nil); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
 // measureHandler serves the form that collects the user's contact data and
 // ground truth (i.e., if we are dealing with a VPN or a direct connection)
 // before the experiment begins.
 func measureHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "GET" {
-		serveFormTemplate(w)
+	if r.Method == http.MethodGet {
+		if err := measureTemplate.Execute(w, nil); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	} else {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
