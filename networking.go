@@ -23,12 +23,6 @@ type FormDetails struct {
 	LocationUser string
 }
 
-type Results struct {
-	UUID      string
-	Timestamp string
-	PingStats *ping.Statistics
-}
-
 // pingAddr sends ICMP pings to the given address and returns ping
 // statistics.
 func pingAddr(addr string) (*ping.Statistics, error) {

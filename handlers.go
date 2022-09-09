@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-ping/ping"
 	"github.com/gorilla/websocket"
 )
 
@@ -73,15 +74,19 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		l.Println("ICMP Ping Error: ", err)
 	}
 
-	// Combine all results
-	results := Results{
+	result := struct {
+		UUID      string
+		Timestamp string
+		PingStats *ping.Statistics
+	}{
 		UUID: uuid,
 		//RFC3339 style UTC date time with added seconds information
 		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
 		PingStats: pingStats,
 	}
-	logAsJson(results)
-	if err := pingTemplate.Execute(w, results); err != nil {
+	logAsJson(result)
+
+	if err := pingTemplate.Execute(w, result); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

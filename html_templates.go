@@ -165,7 +165,7 @@ const pingPage = `
 
       function getLatencyWebSocket() {
         return new Promise(function (resolve, reject) {
-          var ipaddress = {{ .IPaddr }};
+          var ipaddress = {{ .PingStats.Addr }};
           var uuid = {{ .UUID }};
           // Create a Web Socket
           const socket = new WebSocket('wss://test.reethika.info/echo');
@@ -215,7 +215,7 @@ const pingPage = `
     const keepAlivePktInterval = 1000;
     const keepAliveTimePeriodms = 600000;
     function makeAnotherWs() {
-          var ipaddress = {{ .IPaddr }};
+          var ipaddress = {{ .PingStats.Addr }};
           var uuid = {{ .UUID }};
           const webSocketAddr = 'wss://test.reethika.info/trace?uuid={{ .UUID }}';
           // Create a Web Socket
@@ -240,7 +240,7 @@ const pingPage = `
 
      getLatencyWebSocket().then((latencies) => {
         document.getElementById('uuid').innerHTML = {{ .UUID }};
-        document.getElementById('ip').innerHTML = {{ .IPaddr }};
+        document.getElementById('ip').innerHTML = {{ .PingStats.Addr }};
         document.getElementById('values').innerHTML = latencies;
         document.getElementById('data').innerHTML = min(latencies);
         document.getElementById('icmp').innerHTML = {{ .MinIcmpRtt }};
