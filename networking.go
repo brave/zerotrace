@@ -13,16 +13,6 @@ const (
 	icmpTimeout = time.Second * 10
 )
 
-type FormDetails struct {
-	UUID         string
-	Timestamp    string
-	Contact      string
-	ExpType      string
-	Device       string
-	LocationVPN  string
-	LocationUser string
-}
-
 // pingAddr sends ICMP pings to the given address and returns ping
 // statistics.
 func pingAddr(addr string) (*ping.Statistics, error) {

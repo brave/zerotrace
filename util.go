@@ -16,6 +16,16 @@ var (
 	invalidInputErr = errors.New("Invalid Input")
 )
 
+type FormDetails struct {
+	UUID         string
+	Timestamp    string
+	Contact      string
+	ExpType      string
+	Device       string
+	LocationVPN  string
+	LocationUser string
+}
+
 func logAsJson(obj any) {
 	objM, err := json.Marshal(obj)
 	if err != nil {
