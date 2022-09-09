@@ -47,7 +47,9 @@ func hasAnyInterface() bool {
 		return false
 	}
 
+	l.Print("Iterating over interfaces:")
 	for _, iface := range ifaces {
+		l.Printf("\t- %s", iface.Name)
 		if iface.Name == ifaceNameAny {
 			return true
 		}
