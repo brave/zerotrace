@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	beginTTLValue        = 5
-	maxTTLHops           = 32
+	ttlStart             = 5
+	ttlEnd               = 32
 	tracerouteHopTimeout = time.Second * 10
 	snaplen              = 65536
 	promisc              = true
@@ -70,27 +70,39 @@ func newZeroTrace(iface string, conn net.Conn, uuid string) *zeroTrace {
 	}
 }
 
-// sendTTLIncrementingProbes sends probes of incrementing TTL, await response from channel that identifies the hop which sent the ICMP response and stops sending any more probes if connection errors out
-func (z *zeroTrace) sendTTLIncrementingProbes(recvdHopData chan hopRTT) (map[int]hopRTT, error) {
+// traceroute sends probes of incrementing TTL, await response from channel that identifies the hop which sent the ICMP response and stops sending any more probes if connection errors out
+func (z *zeroTrace) traceroute(recvdHopData chan hopRTT) (map[int]hopRTT, error) {
 	traceroute := make(map[int]hopRTT)
-	for ttlValue := beginTTLValue; ttlValue <= maxTTLHops; ttlValue++ {
-		if err := z.sendTracePacket(ttlValue); err != nil {
-			l.Println("Send Trace Packet Error: ", err)
+
+	for ttl := ttlStart; ttl <= ttlEnd; ttl++ {
+		pkt, err := createPkt(z.Conn)
+		if err != nil {
 			return traceroute, err
 		}
-		z.CurrTTLIndicator = ttlValue
+
+		// Set our net.Conn's TTL for future outgoing packets.
+		if err := ipv4.NewConn(z.Conn).SetTTL(ttl); err != nil {
+			return traceroute, err
+		}
+		// Write our serialized packet to the wire.
+		if _, err := z.Conn.Write(pkt); err != nil {
+			return traceroute, err
+		}
+		l.Println("Sent ", ttl, " packet")
+
+		z.CurrTTLIndicator = ttl
 		ticker := time.NewTicker(tracerouteHopTimeout)
 		defer ticker.Stop()
 		select {
 		case hopData := <-recvdHopData:
-			traceroute[ttlValue] = hopData
+			traceroute[ttl] = hopData
 		case <-ticker.C:
-			l.Println("Traceroute Hop Timeout at Hop ", ttlValue, ". Moving on to the next hop.")
+			l.Println("Traceroute Hop Timeout at Hop ", ttl, ". Moving on to the next hop.")
 			var empty net.IP
-			traceroute[ttlValue] = hopRTT{empty, 0}
+			traceroute[ttl] = hopRTT{empty, 0}
 			continue
 		}
-		if traceroute[ttlValue].IP.String() == z.ClientIP {
+		if traceroute[ttl].IP.String() == z.ClientIP {
 			// The client has been reached and RTT has been recorded, so we can break
 			break
 		}
@@ -111,7 +123,7 @@ func (z *zeroTrace) Run() error {
 	// Fire go routine to start listening for packets on the handler before sending TTL limited probes
 	go z.recvPackets(z.PcapHdl, recvdHopChan, quit)
 
-	traceroute, err := z.sendTTLIncrementingProbes(recvdHopChan)
+	traceroute, err := z.traceroute(recvdHopChan)
 	results := tracerouteResults{
 		UUID:      z.UUID,
 		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
@@ -173,60 +185,12 @@ func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan hopRTT, quit cha
 					}
 				}
 			}
-			if counter > maxTTLHops {
+			if counter > ttlEnd {
 				return
 			}
 		}
 	}
 
-}
-
-// sendTracePacket sets the ttlValue, sends the TTL limited probe on the tcpConn and return errors if any
-func (z *zeroTrace) sendTracePacket(ttlValue int) error {
-	tempConn := z.Conn.(*tls.Conn)
-	tcpConn := tempConn.NetConn()
-	ipConn := ipv4.NewConn(tcpConn)
-
-	rawBytesPayload := []byte("test string tcp")
-	localSrcAddr := tcpConn.LocalAddr().String()
-	localSrcIP, localSrcPortString, _ := net.SplitHostPort(localSrcAddr)
-	localSrcPort, _ := strconv.Atoi(localSrcPortString)
-
-	ipLayer := &layers.IPv4{
-		Protocol: layers.IPProtocolTCP,
-		Version:  ipversion,
-		SrcIP:    net.ParseIP(localSrcIP),
-		DstIP:    net.ParseIP(z.ClientIP),
-	}
-	tcpLayer := &layers.TCP{
-		SrcPort: layers.TCPPort(localSrcPort),
-		DstPort: layers.TCPPort(z.ClientPort),
-		PSH:     true,
-		ACK:     true,
-	}
-	_ = tcpLayer.SetNetworkLayerForChecksum(ipLayer)
-
-	// Create the packet with the layers
-	buffer := gopacket.NewSerializeBuffer()
-	options := gopacket.SerializeOptions{
-		ComputeChecksums: true,
-		FixLengths:       true,
-	}
-
-	if err := gopacket.SerializeLayers(buffer, options, tcpLayer, gopacket.Payload(rawBytesPayload)); err != nil {
-		return err
-	}
-
-	if err := ipConn.SetTTL(int(ttlValue)); err != nil {
-		return err
-	}
-
-	outgoingPacket := buffer.Bytes()
-	if _, err := tcpConn.Write(outgoingPacket); err != nil {
-		return err
-	}
-	l.Println("Sent ", ttlValue, " packet")
-	return nil
 }
 
 // processICMPpkt takes the packet (known to contain an ICMP layer, and is not a duplicate for the TTL we have already evaluated)
