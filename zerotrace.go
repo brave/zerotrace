@@ -190,7 +190,6 @@ func (z *zeroTrace) setupPcapAndFilter() (*pcap.Handle, error) {
 // recvPackets listens on the provided pcap handler for packets sent, processes
 // TCP and ICMP packets differently, and aborts if signalled
 func (z *zeroTrace) recvPackets(pcapHdl *pcap.Handle, hops chan hopRTT, quit chan bool) {
-	z.SentPktsIPId = make(map[int][]sentPacketData)
 	packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
 	var counter int
 
