@@ -37,11 +37,11 @@ func pingAddr(addr string) (*ping.Statistics, error) {
 	return pinger.Statistics(), nil
 }
 
-// createPkt creates and returns a trace packet for the given net.Conn object.
-// The function assembles a TCP segment that resembles the given net.Conn and
-// has a small dummy payload.  The returned byte slice is ready to be written
-// to the wire.
-func createPkt(conn net.Conn) ([]byte, error) {
+// createPkt creates and returns a trace packet for the given net.Conn object,
+// containing the given IP ID.  The function assembles a TCP segment that
+// resembles the given net.Conn and has a small dummy payload.  The returned
+// byte slice is ready to be written to the wire.
+func createPkt(conn net.Conn, ipID uint16) ([]byte, error) {
 	// Extract hosts and ports from our net.Conn object.
 	srcIP, strSrcPort, err := net.SplitHostPort(conn.LocalAddr().String())
 	if err != nil {
@@ -66,6 +66,7 @@ func createPkt(conn net.Conn) ([]byte, error) {
 	ipLayer := &layers.IPv4{
 		Protocol: layers.IPProtocolTCP,
 		Version:  ipv4Version,
+		Id:       ipID,
 		SrcIP:    net.ParseIP(srcIP),
 		DstIP:    net.ParseIP(dstIP),
 	}

@@ -57,7 +57,8 @@ func TestPingAddr(t *testing.T) {
 
 func TestCreatePkt(t *testing.T) {
 	conn := &mockConn{}
-	rawPkt, err := createPkt(conn)
+	ipID := uint16(1234)
+	rawPkt, err := createPkt(conn, ipID)
 	if err != nil {
 		t.Fatalf("Failed to create packet for given conn: %v", err)
 	}
@@ -74,6 +75,11 @@ func TestCreatePkt(t *testing.T) {
 	ipLayer := pkt.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 	if ipLayer.Version != ipv4Version {
 		t.Fatalf("Expected IP version %d but got %d.", ipv4Version, ipLayer.Version)
+	}
+
+	// Verify IP ID.
+	if ipLayer.Id != ipID {
+		t.Fatalf("Expected IP ID %d but got %d.", ipID, ipLayer.Id)
 	}
 
 	// Verify source and destination IP addresses.
