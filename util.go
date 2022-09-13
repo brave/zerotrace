@@ -8,12 +8,12 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-
 	"github.com/google/uuid"
 )
 
 var (
-	invalidInputErr = errors.New("Invalid Input")
+	invalidInputErr    = errors.New("Invalid Input")
+	errInvalidIPHeader = errors.New("invalid IP header")
 )
 
 type formDetails struct {
@@ -87,24 +87,20 @@ func getSentTimestampfromIPId(sentDataSlice []sentPacketData, ipid uint16) (time
 	return time.Now().UTC(), errors.New("IP Id not in sent packets")
 }
 
-// getHeaderFromICMPResponsePayload parses IP headers from ICMP Response Payload of the icmpPkt and returns IP header, and error if any
-func getHeaderFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, error) {
-	if len(icmpPkt) < 1 {
-		return nil, errors.New("Invalid IP header")
+// extractIPID parses the given IP header, extracts its IP ID, and returns it.
+func extractIPID(ipPkt []byte) (uint16, error) {
+	// At the very least, we expect an IP header.
+	if len(ipPkt) < 20 {
+		return 0, errInvalidIPHeader
 	}
-	ipHeaderLength := int((icmpPkt[0] & 0x0F) * 4)
 
-	if len(icmpPkt) < ipHeaderLength {
-		return nil, errors.New("IP header unavailable")
-	}
+	// Try decoding the packet, to see if the header is well-formed.
 	ip := layers.IPv4{}
-	ipErr := ip.DecodeFromBytes(icmpPkt[0:], gopacket.NilDecodeFeedback)
-
-	if ipErr != nil {
-		return nil, ipErr
+	if err := ip.DecodeFromBytes(ipPkt, gopacket.NilDecodeFeedback); err != nil {
+		return 0, err
 	}
 
-	return &ip, nil
+	return uint16(ipPkt[4])<<8 | uint16(ipPkt[5]), nil
 }
 
 // sliceContains checks if a particular IP Id (uint16 in layers.IPv4) is present in the slice of IP Ids we provide

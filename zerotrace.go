@@ -237,7 +237,7 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 
 	icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
 	icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
-	ipHeaderIcmp, err := getHeaderFromICMPResponsePayload(icmpPkt.LayerPayload())
+	ipID, err := extractIPID(icmpPkt.LayerPayload())
 	if err != nil {
 		return err
 	}
@@ -253,10 +253,9 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 	// FYI: Currently (8/2022), the server is run on a linux AWS machine
 	// running Ubuntu 22.04 LTS and the IPID for a particular flow is
 	// monotonically increasing/incrementing
-	ipid := ipHeaderIcmp.Id
 	recvTimestamp := packet.Metadata().Timestamp
 	if currHop.String() == z.ClientIP {
-		val := hopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, true)}
+		val := hopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipID, recvTimestamp, true)}
 		// May recieve ICMP responses from Client IP during the connection that
 		// are unrelated to 0trace so check for error from
 		// extractTracerouteHopRTT
@@ -266,8 +265,8 @@ func (z *zeroTrace) processICMPpkt(packet gopacket.Packet, currTTL int, counter 
 		return nil
 	}
 	if icmpPkt.TypeCode.Code() == layers.ICMPv4CodeTTLExceeded {
-		if z.SentPktsIPId[currTTL] != nil && sliceContains(z.SentPktsIPId[currTTL], ipid) {
-			hops <- hopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipid, recvTimestamp, false)}
+		if z.SentPktsIPId[currTTL] != nil && sliceContains(z.SentPktsIPId[currTTL], ipID) {
+			hops <- hopRTT{IP: currHop, RTT: z.extractTracerouteHopRTT(currTTL, ipID, recvTimestamp, false)}
 			*counter = currTTL
 		}
 	}
