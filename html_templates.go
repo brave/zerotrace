@@ -243,7 +243,7 @@ const pingPage = `
         document.getElementById('ip').innerHTML = {{ .PingStats.Addr }};
         document.getElementById('values').innerHTML = latencies;
         document.getElementById('data').innerHTML = min(latencies);
-        document.getElementById('icmp').innerHTML = {{ .MinIcmpRtt }};
+        document.getElementById('icmp').innerHTML = {{ .PingStats.MinRtt }};
       });
     </script>
   </body>
