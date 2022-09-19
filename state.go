@@ -149,12 +149,11 @@ func (s *trState) CalcRTT() time.Duration {
 	l.Printf("Iterating over %d trace packets.", len(s.tracePkts))
 	var closestPkt *tracePkt
 	for _, p := range s.tracePkts {
-		if closestPkt == nil {
-			closestPkt = p
-		}
-
 		if !p.IsAnswered() {
 			continue
+		}
+		if closestPkt == nil {
+			closestPkt = p
 		}
 
 		// If we got a response from the target itself, we're done.

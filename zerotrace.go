@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"net"
 	"strconv"
 	"sync"
@@ -81,46 +82,35 @@ func newZeroTrace(iface string, conn net.Conn, uuid string) *zeroTrace {
 	}
 }
 
-// createIPID returns the next available IP ID for use in outgoing trace
-// packets.  We rely on the IP ID field to link incoming ICMP error packets to
-// previously-sent trace packets, so it's important that IP IDs are only used
-// once.  This function takes care of that.
-func (z *zeroTrace) createIPID() uint16 {
-	z.RLock()
-	defer z.RUnlock()
-
-	var maxIPID uint16
-	for _, pktSigs := range z.sentPkts {
-		for _, pktSig := range pktSigs {
-			if pktSig.HopIPId > maxIPID {
-				maxIPID = pktSig.HopIPId
-			}
-		}
-	}
-	return maxIPID + 1
-}
-
-func (z *zeroTrace) sendTracePkts(c chan *tracePkt) {
+func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 	for ttl := ttlStart; ttl <= ttlEnd; ttl++ {
+		tempConn := z.Conn.(*tls.Conn)
+		tcpConn := tempConn.NetConn()
+		ipConn := ipv4.NewConn(tcpConn)
+
 		// Set our net.Conn's TTL for future outgoing packets.
-		if err := ipv4.NewConn(z.Conn).SetTTL(ttl); err != nil {
+		if err := ipConn.SetTTL(ttl); err != nil {
 			l.Printf("Error setting TTL: %v", err)
 			return
 		}
 
 		for n := 0; n < numProbes; n++ {
-			ipID := z.createIPID()
+			ipID := createIPID()
 			pkt, err := createPkt(z.Conn, ipID)
 			if err != nil {
 				l.Printf("Error creating packet: %v", err)
 				return
 			}
 
-			// Write our serialized packet to the wire.
-			if _, err := z.Conn.Write(pkt); err != nil {
-				l.Printf("Error writing packet: %v", err)
-				return
+			if err := sendRawPkt(
+				ipID,
+				uint8(ttl),
+				net.ParseIP(z.ClientIP),
+				pkt,
+			); err != nil {
+				l.Printf("Error sending raw packet: %v", err)
 			}
+
 			c <- &tracePkt{
 				ttl:  uint8(ttl),
 				ipID: ipID,
@@ -136,35 +126,43 @@ func (z *zeroTrace) sendTracePkts(c chan *tracePkt) {
 // that identifies the hop which sent the ICMP response and stops sending any
 // more probes if connection errors out
 func (z *zeroTrace) calcRTT() (time.Duration, error) {
-	state := &trState{}
+	state := &trState{
+		tracePkts: make(map[uint16]*tracePkt),
+		dstAddr:   net.ParseIP(z.ClientIP),
+	}
 	wg := sync.WaitGroup{}
 	ticker := time.NewTicker(time.Second)
+	quit := make(chan bool)
+	defer close(quit)
 
+	// Begin our packet capture but wait until we're ready to receive packets.
 	wg.Add(1)
 	respChan := make(chan *respPkt)
-	go z.recvRespPkts(respChan, &wg)
+	go z.recvRespPkts(respChan, &wg, quit)
 	wg.Wait()
 
 	traceChan := make(chan *tracePkt)
-	go z.sendTracePkts(traceChan)
+	go z.sendTracePkts(traceChan, state.createIPID)
 
 loop:
 	for {
 		select {
-		// Freshly sent trace packet.
+		// We just sent a trace packet.
 		case tracePkt := <-traceChan:
 			state.AddTracePkt(tracePkt)
 
-		// Freshly received response packet.
+		// We just received a packet in response to a trace packet.
 		case respPkt := <-respChan:
-			state.AddRespPkt(respPkt)
+			if err := state.AddRespPkt(respPkt); err != nil {
+				l.Printf("Error adding response packet: %v", err)
+			}
+
+		// Check if we're done with the traceroute.
+		case <-ticker.C:
+			state.Summary()
 			if state.IsFinished() {
 				break loop
 			}
-
-		// Check for packet timeouts every second.
-		case <-ticker.C:
-			state.Summary()
 		}
 	}
 
@@ -177,16 +175,16 @@ loop:
 func (z *zeroTrace) Run() error {
 	var err error
 
-	l.Println("Starting new 0trace measurement.")
+	l.Printf("Starting new 0trace measurement to %s.", z.Conn.RemoteAddr())
 	rtt, err := z.calcRTT()
 	if err != nil {
 		return err
 	}
-	l.Printf("RTT: %s", rtt)
+	l.Printf("Network-level RTT: %s", rtt)
 	return err
 }
 
-func (z *zeroTrace) recvRespPkts(c chan *respPkt, wg *sync.WaitGroup) {
+func (z *zeroTrace) recvRespPkts(c chan *respPkt, wg *sync.WaitGroup, quit chan bool) {
 	// TODO: Is it ok for multiple zerotrace instances to open a pcap handle?
 	//       Or are we better off having a single, global one?
 	pcapHdl, err := pcap.OpenLive(z.Iface, snaplen, promisc, time.Second)
@@ -203,25 +201,38 @@ func (z *zeroTrace) recvRespPkts(c chan *respPkt, wg *sync.WaitGroup) {
 	// Signal to the caller that we're done setting up our pcap handle.
 	wg.Done()
 
-	for pkt := range packetStream.Packets() {
-		if pkt == nil {
-			continue
-		}
-		ipLayer := pkt.Layer(layers.LayerTypeIPv4)
-		icmpLayer := pkt.Layer(layers.LayerTypeICMPv4)
+	for {
+		select {
+		case <-quit:
+			l.Println("Done reading packets.")
+			return
+		case pkt := <-packetStream.Packets():
+			if pkt == nil {
+				continue
+			}
+			ipLayer := pkt.Layer(layers.LayerTypeIPv4)
+			icmpLayer := pkt.Layer(layers.LayerTypeICMPv4)
 
-		if ipLayer == nil || icmpLayer == nil {
-			continue
-		}
+			if ipLayer == nil || icmpLayer == nil {
+				continue
+			}
 
-		// If it is an ICMP packet, check if it is the ICMP TTL
-		// exceeded one we are looking for
-		respPkt, err := z.extractRcvdPkt(pkt)
-		if err != nil {
-			l.Printf("Failed to extract response packet: %v", err)
-			continue
+			// If it is an ICMP packet, check if it is the ICMP TTL
+			// exceeded one we are looking for
+			respPkt, err := z.extractRcvdPkt(pkt)
+			if err != nil {
+				l.Printf("Failed to extract response packet: %v", err)
+				continue
+			}
+			l.Printf("Got resp. packet with IP ID=%d\n\tTTL: %d\n\t"+
+				"Sent: %s\n\tRecvd: %s (from %s)\n",
+				respPkt.ipID,
+				respPkt.ttl,
+				respPkt.sent,
+				respPkt.recvd,
+				respPkt.recvdFrom)
+			c <- respPkt
 		}
-		c <- respPkt
 	}
 }
 
@@ -232,16 +243,13 @@ func (z *zeroTrace) extractRcvdPkt(packet gopacket.Packet) (*respPkt, error) {
 
 	ipID, err := extractIPID(icmpPkt.LayerPayload())
 	if err != nil {
+		l.Println(packet.String())
 		return nil, err
 	}
 
-	ttl, err := extractTTL(icmpPkt.LayerPayload())
-	if err != nil {
-		return nil, err
-	}
-
+	// We're not interested in the response packet's TTL because by
+	// definition, it's always going to be 1.
 	return &respPkt{
-		ttl:       ttl,
 		ipID:      ipID,
 		recvd:     packet.Metadata().Timestamp,
 		recvdFrom: ipv4Layer.SrcIP,

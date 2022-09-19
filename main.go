@@ -58,8 +58,9 @@ func main() {
 		Prompt: autocert.AcceptTOS,
 		Cache:  autocert.DirCache("certs"),
 	}
+	go http.ListenAndServe(":http", certManager.HTTPHandler(nil)) //nolint:errcheck
 	server := &http.Server{
-		Addr:    ":443",
+		Addr:    addr,
 		Handler: router,
 		TLSConfig: &tls.Config{
 			GetCertificate: certManager.GetCertificate,
@@ -71,5 +72,5 @@ func main() {
 	}
 
 	l.Printf("Starting Web service to listen on %s.", addr)
-	_ = server.ListenAndServeTLS("", "")
+	l.Println(server.ListenAndServeTLS("", ""))
 }
