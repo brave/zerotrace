@@ -31,25 +31,25 @@ var (
 	ifaceName string
 )
 
-// zeroTrace implements the 0trace traceroute technique:
+// ZeroTrace implements the 0trace traceroute technique:
 // https://seclists.org/fulldisclosure/2007/Jan/145
-type zeroTrace struct {
+type ZeroTrace struct {
 	sync.RWMutex
 	iface    string
 	conn     net.Conn
 	targetIP net.IP
 }
 
-// newZeroTrace instantiates and returns a new zeroTrace struct with the
+// NewZeroTrace instantiates and returns a new ZeroTrace struct with the
 // interface, net.Conn underlying connection, client IP and port data
-func newZeroTrace(iface string, conn net.Conn) (*zeroTrace, error) {
+func NewZeroTrace(iface string, conn net.Conn) (*ZeroTrace, error) {
 	s := conn.RemoteAddr().String()
 	host, _, err := net.SplitHostPort(s)
 	if err != nil {
 		return nil, err
 	}
 
-	return &zeroTrace{
+	return &ZeroTrace{
 		iface:    iface,
 		conn:     conn,
 		targetIP: net.ParseIP(host),
@@ -58,14 +58,14 @@ func newZeroTrace(iface string, conn net.Conn) (*zeroTrace, error) {
 
 // getIface returns the name of the interface that we're supposed to use for
 // packet capturing.
-func (z *zeroTrace) getIface() string {
+func (z *ZeroTrace) getIface() string {
 	z.RLock()
 	defer z.RUnlock()
 	return z.iface
 }
 
 // getTargetIP returns the IP address of the traceroute destination.
-func (z *zeroTrace) getTargetIP() net.IP {
+func (z *ZeroTrace) getTargetIP() net.IP {
 	z.RLock()
 	defer z.RUnlock()
 	return z.targetIP
@@ -74,7 +74,7 @@ func (z *zeroTrace) getTargetIP() net.IP {
 // sendTracePkts sends trace packets to our target.  Once a packet was sent,
 // it's written to the given channel.  The given function is used to create an
 // IP ID that is set in the trace packet's IP header.
-func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
+func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 	for ttl := ttlStart; ttl <= ttlEnd; ttl++ {
 		z.RLock()
 		tempConn := z.conn.(*tls.Conn)
@@ -118,9 +118,9 @@ func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 	l.Println("Done sending trace packets.")
 }
 
-// calcRTT coordinates our 0trace traceroute and returns the RTT to the target
+// CalcRTT coordinates our 0trace traceroute and returns the RTT to the target
 // or, if the target won't respond to us, the RTT of the hop that's closest.
-func (z *zeroTrace) calcRTT() (time.Duration, error) {
+func (z *ZeroTrace) CalcRTT() (time.Duration, error) {
 	state := newTrState(z.getTargetIP())
 	ticker := time.NewTicker(time.Second)
 	quit := make(chan bool)
@@ -170,25 +170,10 @@ loop:
 	return state.CalcRTT(), nil
 }
 
-// Run reaches the underlying connection and sets up necessary pcap handles and
-// implements the 0trace method of sending TTL-limited probes on an existing
-// TCP connection
-func (z *zeroTrace) Run() error {
-	var err error
-
-	l.Printf("Starting new 0trace measurement to %s.", z.getTargetIP())
-	rtt, err := z.calcRTT()
-	if err != nil {
-		return err
-	}
-	l.Printf("Network-level RTT: %s", rtt)
-	return err
-}
-
 // recvRespPkts uses the given pcap handle to read incoming packets and filters
 // for ICMP TTL exceeded packets that are then sent to the given channel.  The
 // function returns when the given quit channel is closed.
-func (z *zeroTrace) recvRespPkts(pcapHdl *pcap.Handle, c chan *respPkt, quit chan bool) {
+func (z *ZeroTrace) recvRespPkts(pcapHdl *pcap.Handle, c chan *respPkt, quit chan bool) {
 	packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
 
 	for {
@@ -228,7 +213,7 @@ func (z *zeroTrace) recvRespPkts(pcapHdl *pcap.Handle, c chan *respPkt, quit cha
 
 // extractRcvdPkt extracts what we need (IP ID, timestamp, address) from the
 // given network packet.
-func (z *zeroTrace) extractRcvdPkt(packet gopacket.Packet) (*respPkt, error) {
+func (z *ZeroTrace) extractRcvdPkt(packet gopacket.Packet) (*respPkt, error) {
 	ipv4Layer := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 	icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
 	icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
