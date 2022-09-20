@@ -35,7 +35,22 @@ type zeroTrace struct {
 	sync.RWMutex
 	iface    string
 	conn     net.Conn
-	clientIP net.IP
+	targetIP net.IP
+}
+
+// getIface returns the name of the interface that we're supposed to use for
+// packet capturing.
+func (z *zeroTrace) getIface() string {
+	z.RLock()
+	defer z.RUnlock()
+	return z.iface
+}
+
+// getTargetIP returns the IP address of the traceroute destination.
+func (z *zeroTrace) getTargetIP() net.IP {
+	z.RLock()
+	defer z.RUnlock()
+	return z.targetIP
 }
 
 // newZeroTrace instantiates and returns a new zeroTrace struct with the
@@ -50,13 +65,15 @@ func newZeroTrace(iface string, conn net.Conn) (*zeroTrace, error) {
 	return &zeroTrace{
 		iface:    iface,
 		conn:     conn,
-		clientIP: net.ParseIP(host),
+		targetIP: net.ParseIP(host),
 	}, nil
 }
 
 func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 	for ttl := ttlStart; ttl <= ttlEnd; ttl++ {
+		z.RLock()
 		tempConn := z.conn.(*tls.Conn)
+		z.RUnlock()
 		tcpConn := tempConn.NetConn()
 		ipConn := ipv4.NewConn(tcpConn)
 
@@ -68,7 +85,9 @@ func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 
 		for n := 0; n < numProbes; n++ {
 			ipID := createIPID()
+			z.RLock()
 			pkt, err := createPkt(z.conn, ipID)
+			z.RUnlock()
 			if err != nil {
 				l.Printf("Error creating packet: %v", err)
 				return
@@ -77,7 +96,7 @@ func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 			if err := sendRawPkt(
 				ipID,
 				uint8(ttl),
-				z.clientIP,
+				z.getTargetIP(),
 				pkt,
 			); err != nil {
 				l.Printf("Error sending raw packet: %v", err)
@@ -98,14 +117,14 @@ func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 // destination or, if the destination won't respond to us, the RTT of the hop
 // that's closest.
 func (z *zeroTrace) calcRTT() (time.Duration, error) {
-	state := newTrState(z.clientIP)
+	state := newTrState(z.getTargetIP())
 	ticker := time.NewTicker(time.Second)
 	quit := make(chan bool)
 	defer close(quit)
 
 	// Set up our pcap handle.
 	promiscuous := true
-	pcapHdl, err := pcap.OpenLive(z.iface, snapLen, promiscuous, pktBufTimeout)
+	pcapHdl, err := pcap.OpenLive(z.getIface(), snapLen, promiscuous, pktBufTimeout)
 	if err != nil {
 		return 0, err
 	}
@@ -153,7 +172,7 @@ loop:
 func (z *zeroTrace) Run() error {
 	var err error
 
-	l.Printf("Starting new 0trace measurement to %s.", z.conn.RemoteAddr())
+	l.Printf("Starting new 0trace measurement to %s.", z.getTargetIP())
 	rtt, err := z.calcRTT()
 	if err != nil {
 		return err
