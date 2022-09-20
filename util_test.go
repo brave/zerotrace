@@ -3,13 +3,8 @@ package main
 import (
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
-)
-
-var (
-	currentTime = time.Now().UTC()
 )
 
 func AssertEqualValue(t *testing.T, expected any, actual any) {
@@ -55,27 +50,6 @@ func TestValidateForm(t *testing.T) {
 	_, err = validateForm("", "", "", "", "")
 	AssertError(t, err)
 	AssertEqualValue(t, invalidInputErr, err)
-}
-
-func TestGetSentTimestampfromIPId(t *testing.T) {
-	// Test the only untested portion of this function
-	sentPktsIPId := make(map[int][]sentPacketData)
-	sentPktsIPId[1] = append(sentPktsIPId[1], sentPacketData{HopIPId: 1, HopSentTime: currentTime})
-	sentPktsIPId[1] = append(sentPktsIPId[1], sentPacketData{HopIPId: 2, HopSentTime: currentTime})
-
-	// Retrieve the sent time for a valid IP ID from the slice that was passed
-	t1, err := getSentTimestampfromIPId(sentPktsIPId[1], 1)
-	if t1 != currentTime {
-		t.Fatalf("Expected to retrieve HopSentTime correctly, but got: %v", t1)
-	}
-	if err != nil {
-		t.Fatalf("Expected no error, but got %v", err)
-	}
-
-	// Retrieve the sent time for a invalid IP ID that does not exist in the slice that was passed
-	_, err = getSentTimestampfromIPId(sentPktsIPId[1], 1000)
-	AssertError(t, err)
-	AssertEqualValue(t, "IP Id not in sent packets", err.Error())
 }
 
 func TestIsValidUUID(t *testing.T) {

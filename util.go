@@ -72,21 +72,6 @@ func isValidUUID(u string) bool {
 	return err == nil
 }
 
-// fmtTimeMs returns the value (time.Duration) in milliseconds, the inbuilt time.Milliseconds() function only returns an int64 value
-func fmtTimeMs(value time.Duration) float64 {
-	return (float64(value) / float64(time.Millisecond))
-}
-
-// getSentTimestampfromIPId traverses the []SentPacketData slice and returns the HopSentTime associated with the provided ipid, and error if any
-func getSentTimestampfromIPId(sentDataSlice []sentPacketData, ipid uint16) (time.Time, error) {
-	for _, v := range sentDataSlice {
-		if v.HopIPId == ipid {
-			return v.HopSentTime, nil
-		}
-	}
-	return time.Now().UTC(), errors.New("IP Id not in sent packets")
-}
-
 func extractTTL(ipPkt []byte) (uint8, error) {
 	// At the very least, we expect an IP header.
 	if len(ipPkt) < 20 {
