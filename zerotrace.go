@@ -14,9 +14,12 @@ import (
 )
 
 const (
+	// The number of probes we're sending for a given TTL.
 	numProbes = 3
-	ttlStart  = 5
-	ttlEnd    = 32
+	// The TTL at which we start sending trace packets.
+	ttlStart = 5
+	// The TTL at which we stop sending trace packets.
+	ttlEnd = 32
 	// The number of bytes per frame that we want libpcap to capture.  500
 	// bytes is enough for ICMP TTL exceeded packets.
 	snapLen = 500
