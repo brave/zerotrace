@@ -34,8 +34,8 @@ var (
 type zeroTrace struct {
 	sync.RWMutex
 	iface    string
-	Conn     net.Conn
-	ClientIP net.IP
+	conn     net.Conn
+	clientIP net.IP
 }
 
 // newZeroTrace instantiates and returns a new zeroTrace struct with the
@@ -49,14 +49,14 @@ func newZeroTrace(iface string, conn net.Conn) (*zeroTrace, error) {
 
 	return &zeroTrace{
 		iface:    iface,
-		Conn:     conn,
-		ClientIP: net.ParseIP(host),
+		conn:     conn,
+		clientIP: net.ParseIP(host),
 	}, nil
 }
 
 func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 	for ttl := ttlStart; ttl <= ttlEnd; ttl++ {
-		tempConn := z.Conn.(*tls.Conn)
+		tempConn := z.conn.(*tls.Conn)
 		tcpConn := tempConn.NetConn()
 		ipConn := ipv4.NewConn(tcpConn)
 
@@ -68,7 +68,7 @@ func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 
 		for n := 0; n < numProbes; n++ {
 			ipID := createIPID()
-			pkt, err := createPkt(z.Conn, ipID)
+			pkt, err := createPkt(z.conn, ipID)
 			if err != nil {
 				l.Printf("Error creating packet: %v", err)
 				return
@@ -77,7 +77,7 @@ func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 			if err := sendRawPkt(
 				ipID,
 				uint8(ttl),
-				z.ClientIP,
+				z.clientIP,
 				pkt,
 			); err != nil {
 				l.Printf("Error sending raw packet: %v", err)
@@ -98,7 +98,7 @@ func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 // destination or, if the destination won't respond to us, the RTT of the hop
 // that's closest.
 func (z *zeroTrace) calcRTT() (time.Duration, error) {
-	state := newTrState(z.ClientIP)
+	state := newTrState(z.clientIP)
 	ticker := time.NewTicker(time.Second)
 	quit := make(chan bool)
 	defer close(quit)
@@ -153,7 +153,7 @@ loop:
 func (z *zeroTrace) Run() error {
 	var err error
 
-	l.Printf("Starting new 0trace measurement to %s.", z.Conn.RemoteAddr())
+	l.Printf("Starting new 0trace measurement to %s.", z.conn.RemoteAddr())
 	rtt, err := z.calcRTT()
 	if err != nil {
 		return err
