@@ -58,9 +58,9 @@ func TestValidateForm(t *testing.T) {
 
 func TestGetSentTimestampfromIPId(t *testing.T) {
 	// Test the only untested portion of this function
-	sentPktsIPId := make(map[int][]SentPacketData)
-	sentPktsIPId[1] = append(sentPktsIPId[1], SentPacketData{HopIPId: 1, HopSentTime: currentTime})
-	sentPktsIPId[1] = append(sentPktsIPId[1], SentPacketData{HopIPId: 2, HopSentTime: currentTime})
+	sentPktsIPId := make(map[int][]sentPacketData)
+	sentPktsIPId[1] = append(sentPktsIPId[1], sentPacketData{HopIPId: 1, HopSentTime: currentTime})
+	sentPktsIPId[1] = append(sentPktsIPId[1], sentPacketData{HopIPId: 2, HopSentTime: currentTime})
 
 	// Retrieve the sent time for a valid IP ID from the slice that was passed
 	t1, err := getSentTimestampfromIPId(sentPktsIPId[1], 1)

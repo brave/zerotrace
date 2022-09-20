@@ -8,8 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
 
+	"github.com/go-chi/chi"
 	"github.com/google/gopacket/pcap"
 )
 
@@ -18,27 +18,8 @@ const (
 )
 
 var (
-	directoryPath string
-	l             = log.New(os.Stderr, "latsrv: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
+	l = log.New(os.Stderr, "latsrv: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
 )
-
-// checkHTTPParams checks if request method is GET, and ensures URL path is right
-func checkHTTPParams(w http.ResponseWriter, r *http.Request, pathstring string) bool {
-	if r.URL.Path != pathstring {
-		http.NotFound(w, r)
-		return true
-	}
-	if r.Method != "GET" && pathstring != "/measure" {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return true
-	}
-	return false
-}
-
-// redirectToTLS helps redirect HTTP connections to HTTPS
-func redirectToTLS(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
-}
 
 // hasAnyInterface returns true if the system has a networking interface called
 // "any".
@@ -48,7 +29,9 @@ func hasAnyInterface() bool {
 		return false
 	}
 
+	l.Print("Iterating over interfaces:")
 	for _, iface := range ifaces {
+		l.Printf("\t- %s", iface.Name)
 		if iface.Name == ifaceNameAny {
 			return true
 		}
@@ -57,27 +40,26 @@ func hasAnyInterface() bool {
 }
 
 func main() {
-	flag.StringVar(&directoryPath, "dirpath", "", "Path where this code lives, used to index the html file paths")
+	var addr string
 	flag.StringVar(&ifaceName, "iface", ifaceNameAny, "Interface name to listen on, default: any")
+	flag.StringVar(&addr, "addr", ":8080", "Address to listen on, default: :8080")
 	flag.Parse()
 
-	certPath := "/etc/letsencrypt/live/test.reethika.info/"
-	fullChain := path.Join(certPath, "fullchain.pem")
-	privKey := path.Join(certPath, "privkey.pem")
-	http.HandleFunc("/", indexHandler)
-	http.HandleFunc("/ping", pingHandler)
-	http.HandleFunc("/echo", echoHandler)
-	http.HandleFunc("/trace", traceHandler)
-	http.HandleFunc("/measure", measureHandler)
-
 	if ifaceName == ifaceNameAny && !hasAnyInterface() {
-		log.Fatal("We were told to use the 'any' interface but it's not present.")
+		l.Fatal("We were told to use the 'any' interface but it's not present.")
 	}
 
-	go func() {
-		if err := http.ListenAndServe(":80", http.HandlerFunc(redirectToTLS)); err != nil {
-			l.Printf("ListenAndServe port 80 error: %v", err)
-		}
-	}()
-	l.Println(http.ListenAndServeTLS(":443", fullChain, privKey, nil))
+	router := chi.NewRouter()
+	router.Get("/", indexHandler)
+	router.Get("/ping", pingHandler)
+	router.Get("/echo", echoHandler)
+	router.Get("/trace", traceHandler)
+	router.Post("/measure", measureHandler)
+	srv := http.Server{
+		Addr:    addr,
+		Handler: router,
+	}
+
+	l.Printf("Starting Web service to listen on %s.", addr)
+	l.Println(srv.ListenAndServe())
 }

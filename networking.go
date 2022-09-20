@@ -7,53 +7,25 @@ import (
 )
 
 const (
-	icmpCount   = 5
+	// The number of ICMP packets we send to a client.
+	icmpCount = 5
+	// The time we're willing to wait for an ICMP response.
 	icmpTimeout = time.Second * 10
 )
 
-type FormDetails struct {
-	UUID         string
-	Timestamp    string
-	Contact      string
-	ExpType      string
-	Device       string
-	LocationVPN  string
-	LocationUser string
-}
-
-type PingMsmt struct {
-	IP        string
-	PktSent   int
-	PktRecv   int
-	PktLoss   float64
-	MinRtt    float64
-	AvgRtt    float64
-	MaxRtt    float64
-	StdDevRtt float64
-}
-
-type Results struct {
-	UUID       string
-	IPaddr     string
-	Timestamp  string
-	IcmpPing   PingMsmt
-	MinIcmpRtt float64
-}
-
-// icmpPinger sends ICMP pings and returns statistics
-func icmpPinger(ip string) (*PingMsmt, error) {
-	pinger, err := ping.NewPinger(ip)
+// pingAddr sends ICMP pings to the given address and returns ping
+// statistics.
+func pingAddr(addr string) (*ping.Statistics, error) {
+	pinger, err := ping.NewPinger(addr)
 	if err != nil {
 		return nil, err
 	}
+
 	pinger.Count = icmpCount
 	pinger.Timeout = icmpTimeout
-	err = pinger.Run() // Blocks until finished.
-	if err != nil {
+	if err = pinger.Run(); err != nil { // Blocks until finished.
 		return nil, err
 	}
-	stat := pinger.Statistics()
-	pingMsmt := PingMsmt{ip, stat.PacketsSent, stat.PacketsRecv, stat.PacketLoss, fmtTimeMs(stat.MinRtt),
-		fmtTimeMs(stat.AvgRtt), fmtTimeMs(stat.MaxRtt), fmtTimeMs(stat.StdDevRtt)}
-	return &pingMsmt, nil
+
+	return pinger.Statistics(), nil
 }

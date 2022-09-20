@@ -2,37 +2,36 @@ package main
 
 import (
 	"encoding/json"
-	"html/template"
+	"fmt"
 	"net"
 	"net/http"
-	"path"
 	"time"
 
+	"github.com/go-ping/ping"
 	"github.com/gorilla/websocket"
 )
 
-// serveFormTemplate serves the form
-func serveFormTemplate(w http.ResponseWriter) {
-	var WebTemplate, _ = template.ParseFiles(path.Join(directoryPath, "measure.html"))
-	if err := WebTemplate.Execute(w, nil); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-// measureHandler serves the form which collects user's contact data and ground-truth (VPN/Direct) before experiment begins
+// measureHandler serves the form that collects the user's contact data and
+// ground truth (i.e., if we are dealing with a VPN or a direct connection)
+// before the experiment begins.
 func measureHandler(w http.ResponseWriter, r *http.Request) {
-	if checkHTTPParams(w, r, "/measure") {
-		return
-	}
-	if r.Method == "GET" {
-		serveFormTemplate(w)
+	if r.Method == http.MethodGet {
+		if err := measureTemplate.Execute(w, nil); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	} else {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		details, err := validateForm(r.FormValue("email"), r.FormValue("exp_type"), r.FormValue("device"), r.FormValue("location_vpn"), r.FormValue("location_user"))
+		details, err := validateForm(
+			r.FormValue("email"),
+			r.FormValue("exp_type"),
+			r.FormValue("device"),
+			r.FormValue("location_vpn"),
+			r.FormValue("location_user"),
+		)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -42,20 +41,21 @@ func measureHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// indexHandler serves the default index page with reasons for scanning IPs on this server and point of contact
+// indexHandler serves the default index page which explains what measurements
+// we are running.
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	if checkHTTPParams(w, r, "/") {
-		return
-	}
-	path := path.Join(directoryPath, "/index.html")
-	http.ServeFile(w, r, path)
+	fmt.Fprint(w, indexPage)
 }
 
-// pingHandler for ICMP measurements which also serves the webpage via a template
+// pingHandler implements a one-off measurement for the connecting client.  It
+// does the following:
+//
+//   1. Send ICMP packets to the client to determine the RTT.
+//   2. Serve the client JavaScript that initiates a WebSocket connection with
+//      us, again to determine the application-level RTT.
+//   3. Start another WebSocket connection to run a 0trace measurement, to
+//      determine an even more accurate RTT.
 func pingHandler(w http.ResponseWriter, r *http.Request) {
-	if checkHTTPParams(w, r, "/ping") {
-		return
-	}
 	var uuid string
 	for k, v := range r.URL.Query() {
 		if k == "uuid" && isValidUUID(v[0]) {
@@ -69,33 +69,34 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	clientIPstr := r.RemoteAddr
 	clientIP, _, _ := net.SplitHostPort(clientIPstr)
 
-	icmpResults, err := icmpPinger(clientIP)
+	pingStats, err := pingAddr(clientIP)
 	if err != nil {
 		l.Println("ICMP Ping Error: ", err)
 	}
 
-	// Combine all results
-	results := Results{
-		UUID:   uuid,
-		IPaddr: clientIP,
+	result := struct {
+		UUID      string
+		Timestamp string
+		PingStats *ping.Statistics
+	}{
+		UUID: uuid,
 		//RFC3339 style UTC date time with added seconds information
-		Timestamp:  time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
-		IcmpPing:   *icmpResults,
-		MinIcmpRtt: icmpResults.MinRtt,
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.000000"),
+		PingStats: pingStats,
 	}
-	logAsJson(results)
-	var WebTemplate, _ = template.ParseFiles(path.Join(directoryPath, "pingpage.html"))
-	if err := WebTemplate.Execute(w, results); err != nil {
+	logAsJson(result)
+
+	if err := pingTemplate.Execute(w, result); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 }
 
-// traceHandler speaks WebSocket for extracting underlying connection to use for 0trace
+// traceHandler accepts incoming WebSocket connections and, once one is
+// established, uses it to run a 0trace measurement to the client.  This is
+// likely to corrupt the underlying TCP connection but we don't care about
+// that.
 func traceHandler(w http.ResponseWriter, r *http.Request) {
-	if checkHTTPParams(w, r, "/trace") {
-		return
-	}
 	var uuid string
 	for k, v := range r.URL.Query() {
 		if k == "uuid" && isValidUUID(v[0]) {
@@ -124,11 +125,10 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// echoHandler for the echo webserver that speaks WebSocket
+// echoHandler accepts incoming WebSocket connections and determines the round
+// trip time between the client and us by taking advantage of a handful of
+// "ping" messages.
 func echoHandler(w http.ResponseWriter, r *http.Request) {
-	if checkHTTPParams(w, r, "/echo") {
-		return
-	}
 	var upgrader = websocket.Upgrader{}
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -152,7 +152,8 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if wsData["type"] != "ws-latency" {
 			if wsUUID, ok := wsData["UUID"].(string); ok {
-				// Only log the final message with all latencies calculated, and don't log other unsolicited echo messages
+				// Only log the final message with all latencies calculated,
+				// and don't log other unsolicited echo messages
 				if isValidUUID(string(wsUUID)) {
 					l.Println(string(message))
 				}

@@ -90,9 +90,9 @@ func TestProcessICMPpkt(t *testing.T) {
 	currTTL := int(ttl)
 	ipID := uint16(0)
 	// Set up data in SentPktsIPId
-	z.SentPktsIPId[currTTL] = append(z.SentPktsIPId[currTTL], SentPacketData{HopIPId: ipID, HopSentTime: time.Now().UTC()})
+	z.SentPktsIPId[currTTL] = append(z.SentPktsIPId[currTTL], sentPacketData{HopIPId: ipID, HopSentTime: time.Now().UTC()})
 	// Open and close the channel that processICMPpkt will try to write into
-	recvdHopChan := make(chan HopRTT)
+	recvdHopChan := make(chan hopRTT)
 	close(recvdHopChan)
 	assert.PanicsWithError(t, panicChanErr, func() { _ = z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan) })
 
@@ -102,7 +102,7 @@ func TestProcessICMPpkt(t *testing.T) {
 
 	// Test for case where client IP has been reached, but z.SendPktsIPId does not have the necessary IP Id, registers an error
 	// and does not write to recvdHopChan
-	z.SentPktsIPId = make(map[int][]SentPacketData)
+	z.SentPktsIPId = make(map[int][]sentPacketData)
 	z.ClientIP = "192.168.0.1"
 	err := z.processICMPpkt(pkt, currTTL, &counter, recvdHopChan)
 	assert.NoError(t, err)
