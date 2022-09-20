@@ -14,13 +14,15 @@ import (
 )
 
 const (
-	numProbes            = 3
-	ttlStart             = 5
-	ttlEnd               = 32
-	tracerouteHopTimeout = time.Second * 10
-	snaplen              = 65536
-	promisc              = true
-	ipversion            = 4
+	numProbes = 3
+	ttlStart  = 5
+	ttlEnd    = 32
+	// The number of bytes per frame that we want libpcap to capture.  500
+	// bytes is enough for ICMP TTL exceeded packets.
+	snapLen = 500
+	// The time we're willing to wait for packets to accumulate in our receive
+	// buffer.
+	pktBufTimeout = time.Millisecond * 10
 )
 
 var (
@@ -55,7 +57,7 @@ func (s sentTracePkts) contain(ttl int, ipID uint16) bool {
 
 type zeroTrace struct {
 	sync.RWMutex
-	Iface            string
+	iface            string
 	Conn             net.Conn
 	UUID             string
 	PcapHdl          *pcap.Handle
@@ -73,7 +75,7 @@ func newZeroTrace(iface string, conn net.Conn, uuid string) *zeroTrace {
 	clientPort, _ := strconv.Atoi(clPort)
 
 	return &zeroTrace{
-		Iface:      iface,
+		iface:      iface,
 		Conn:       conn,
 		UUID:       uuid,
 		ClientIP:   clientIP,
@@ -122,25 +124,31 @@ func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 	l.Println("Done sending trace packets.")
 }
 
-// traceroute sends probes of incrementing TTL, await response from channel
-// that identifies the hop which sent the ICMP response and stops sending any
-// more probes if connection errors out
+// calcRTT coordinates our 0trace traceroute and returns the RTT to the
+// destination or, if the destination won't respond to us, the RTT of the hop
+// that's closest.
 func (z *zeroTrace) calcRTT() (time.Duration, error) {
-	state := &trState{
-		tracePkts: make(map[uint16]*tracePkt),
-		dstAddr:   net.ParseIP(z.ClientIP),
-	}
-	wg := sync.WaitGroup{}
+	state := newTrState(net.ParseIP(z.ClientIP))
 	ticker := time.NewTicker(time.Second)
 	quit := make(chan bool)
 	defer close(quit)
 
-	// Begin our packet capture but wait until we're ready to receive packets.
-	wg.Add(1)
-	respChan := make(chan *respPkt)
-	go z.recvRespPkts(respChan, &wg, quit)
-	wg.Wait()
+	// Set up our pcap handle.
+	promiscuous := true
+	pcapHdl, err := pcap.OpenLive(z.iface, snapLen, promiscuous, pktBufTimeout)
+	if err != nil {
+		return 0, err
+	}
+	if err = pcapHdl.SetBPFFilter("icmp"); err != nil {
+		return 0, err
+	}
+	defer pcapHdl.Close()
 
+	// Spawn goroutine that listens for incoming ICMP response packets.
+	respChan := make(chan *respPkt)
+	go z.recvRespPkts(pcapHdl, respChan, quit)
+
+	// Spawn goroutine that sends trace packets.
 	traceChan := make(chan *tracePkt)
 	go z.sendTracePkts(traceChan, state.createIPID)
 
@@ -184,22 +192,8 @@ func (z *zeroTrace) Run() error {
 	return err
 }
 
-func (z *zeroTrace) recvRespPkts(c chan *respPkt, wg *sync.WaitGroup, quit chan bool) {
-	// TODO: Is it ok for multiple zerotrace instances to open a pcap handle?
-	//       Or are we better off having a single, global one?
-	pcapHdl, err := pcap.OpenLive(z.Iface, snaplen, promisc, time.Second)
-	if err != nil {
-		// TODO: How to deal with this?
-		l.Printf("Failed to open pcap handle: %v", err)
-	}
-	defer pcapHdl.Close()
-
-	if err = pcapHdl.SetBPFFilter("icmp"); err != nil {
-		l.Printf("Failed to set BPF filter: %v", err)
-	}
+func (z *zeroTrace) recvRespPkts(pcapHdl *pcap.Handle, c chan *respPkt, quit chan bool) {
 	packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
-	// Signal to the caller that we're done setting up our pcap handle.
-	wg.Done()
 
 	for {
 		select {
