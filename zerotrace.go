@@ -31,26 +31,13 @@ var (
 	ifaceName string
 )
 
+// zeroTrace implements the 0trace traceroute technique:
+// https://seclists.org/fulldisclosure/2007/Jan/145
 type zeroTrace struct {
 	sync.RWMutex
 	iface    string
 	conn     net.Conn
 	targetIP net.IP
-}
-
-// getIface returns the name of the interface that we're supposed to use for
-// packet capturing.
-func (z *zeroTrace) getIface() string {
-	z.RLock()
-	defer z.RUnlock()
-	return z.iface
-}
-
-// getTargetIP returns the IP address of the traceroute destination.
-func (z *zeroTrace) getTargetIP() net.IP {
-	z.RLock()
-	defer z.RUnlock()
-	return z.targetIP
 }
 
 // newZeroTrace instantiates and returns a new zeroTrace struct with the
@@ -69,6 +56,24 @@ func newZeroTrace(iface string, conn net.Conn) (*zeroTrace, error) {
 	}, nil
 }
 
+// getIface returns the name of the interface that we're supposed to use for
+// packet capturing.
+func (z *zeroTrace) getIface() string {
+	z.RLock()
+	defer z.RUnlock()
+	return z.iface
+}
+
+// getTargetIP returns the IP address of the traceroute destination.
+func (z *zeroTrace) getTargetIP() net.IP {
+	z.RLock()
+	defer z.RUnlock()
+	return z.targetIP
+}
+
+// sendTracePkts sends trace packets to our target.  Once a packet was sent,
+// it's written to the given channel.  The given function is used to create an
+// IP ID that is set in the trace packet's IP header.
 func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 	for ttl := ttlStart; ttl <= ttlEnd; ttl++ {
 		z.RLock()
@@ -113,9 +118,8 @@ func (z *zeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 	l.Println("Done sending trace packets.")
 }
 
-// calcRTT coordinates our 0trace traceroute and returns the RTT to the
-// destination or, if the destination won't respond to us, the RTT of the hop
-// that's closest.
+// calcRTT coordinates our 0trace traceroute and returns the RTT to the target
+// or, if the target won't respond to us, the RTT of the hop that's closest.
 func (z *zeroTrace) calcRTT() (time.Duration, error) {
 	state := newTrState(z.getTargetIP())
 	ticker := time.NewTicker(time.Second)
@@ -181,6 +185,9 @@ func (z *zeroTrace) Run() error {
 	return err
 }
 
+// recvRespPkts uses the given pcap handle to read incoming packets and filters
+// for ICMP TTL exceeded packets that are then sent to the given channel.  The
+// function returns when the given quit channel is closed.
 func (z *zeroTrace) recvRespPkts(pcapHdl *pcap.Handle, c chan *respPkt, quit chan bool) {
 	packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
 
@@ -219,6 +226,8 @@ func (z *zeroTrace) recvRespPkts(pcapHdl *pcap.Handle, c chan *respPkt, quit cha
 	}
 }
 
+// extractRcvdPkt extracts what we need (IP ID, timestamp, address) from the
+// given network packet.
 func (z *zeroTrace) extractRcvdPkt(packet gopacket.Packet) (*respPkt, error) {
 	ipv4Layer := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 	icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
@@ -226,7 +235,6 @@ func (z *zeroTrace) extractRcvdPkt(packet gopacket.Packet) (*respPkt, error) {
 
 	ipID, err := extractIPID(icmpPkt.LayerPayload())
 	if err != nil {
-		l.Println(packet.String())
 		return nil, err
 	}
 
