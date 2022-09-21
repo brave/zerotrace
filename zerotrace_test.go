@@ -5,8 +5,7 @@ import (
 )
 
 func TestNewZeroTrace(t *testing.T) {
-	conn := &mockConn{}
-	if _, err := NewZeroTrace("foobar", conn); err != nil {
+	if _, err := NewZeroTrace("foobar"); err != nil {
 		t.Fatalf("Failed to create zerotrace object: %v", err)
 	}
 }

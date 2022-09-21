@@ -38,23 +38,21 @@ var (
 type ZeroTrace struct {
 	sync.RWMutex
 	iface    string
-	conn     net.Conn
 	targetIP net.IP
 }
 
-// NewZeroTrace instantiates and returns a new ZeroTrace struct with the
-// interface, net.Conn underlying connection, client IP and port data
-func NewZeroTrace(iface string, conn net.Conn) (*ZeroTrace, error) {
-	s := conn.RemoteAddr().String()
-	host, _, err := net.SplitHostPort(s)
-	if err != nil {
-		return nil, err
-	}
+// NewZeroTrace instantiates and returns a new ZeroTrace object that's going to
+// use the given interface for its measurement.
+func NewZeroTrace(iface string) (*ZeroTrace, error) {
+	// s := conn.RemoteAddr().String()
+	// host, _, err := net.SplitHostPort(s)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// net.ParseIP(host)
 
 	return &ZeroTrace{
-		iface:    iface,
-		conn:     conn,
-		targetIP: net.ParseIP(host),
+		iface: iface,
 	}, nil
 }
 
@@ -76,11 +74,9 @@ func (z *ZeroTrace) getTargetIP() net.IP {
 // sendTracePkts sends trace packets to our target.  Once a packet was sent,
 // it's written to the given channel.  The given function is used to create an
 // IP ID that is set in the trace packet's IP header.
-func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
+func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, conn net.Conn) {
 	for ttl := ttlStart; ttl <= ttlEnd; ttl++ {
-		z.RLock()
-		tempConn := z.conn.(*tls.Conn)
-		z.RUnlock()
+		tempConn := conn.(*tls.Conn)
 		tcpConn := tempConn.NetConn()
 		ipConn := ipv4.NewConn(tcpConn)
 
@@ -92,9 +88,7 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 
 		for n := 0; n < numProbes; n++ {
 			ipID := createIPID()
-			z.RLock()
-			pkt, err := createPkt(z.conn, ipID)
-			z.RUnlock()
+			pkt, err := createPkt(conn, ipID)
 			if err != nil {
 				l.Printf("Error creating packet: %v", err)
 				return
@@ -122,7 +116,8 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16) {
 
 // CalcRTT coordinates our 0trace traceroute and returns the RTT to the target
 // or, if the target won't respond to us, the RTT of the hop that's closest.
-func (z *ZeroTrace) CalcRTT() (time.Duration, error) {
+func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
+
 	state := newTrState(z.getTargetIP())
 	ticker := time.NewTicker(time.Second)
 	quit := make(chan bool)
@@ -145,7 +140,7 @@ func (z *ZeroTrace) CalcRTT() (time.Duration, error) {
 
 	// Spawn goroutine that sends trace packets.
 	traceChan := make(chan *tracePkt)
-	go z.sendTracePkts(traceChan, state.createIPID)
+	go z.sendTracePkts(traceChan, state.createIPID, conn)
 
 loop:
 	for {

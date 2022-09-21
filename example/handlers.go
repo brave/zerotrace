@@ -140,12 +140,12 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 	myConn := c.UnderlyingConn()
 
-	zeroTraceInstance, err := zerotrace.NewZeroTrace("eth0", myConn)
+	zeroTraceInstance, err := zerotrace.NewZeroTrace("eth0")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	_, err = zeroTraceInstance.CalcRTT()
+	_, err = zeroTraceInstance.CalcRTT(myConn)
 	if err != nil {
 		l.Println("ZeroTrace Run Error: ", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
