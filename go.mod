@@ -1,4 +1,4 @@
-module latsrv
+module github.com/brave-experiments/zerotrace
 
 go 1.18
 

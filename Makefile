@@ -1,9 +1,8 @@
 .PHONY: all test coverage lint clean
 
-binary = latsrv
 godeps = *.go go.mod go.sum
 
-all: test lint $(binary)
+all: test lint
 
 test:
 	go test -cover ./...
@@ -15,9 +14,3 @@ coverage:
 
 lint:
 	golangci-lint run
-
-$(binary): $(godeps)
-	go build -o $(binary)
-
-clean:
-	rm -f $(binary)

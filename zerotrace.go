@@ -1,8 +1,10 @@
-package main
+package zerotrace
 
 import (
 	"crypto/tls"
+	"log"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -28,7 +30,7 @@ const (
 )
 
 var (
-	ifaceName string
+	l = log.New(os.Stderr, "latsrv: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
 )
 
 // ZeroTrace implements the 0trace traceroute technique:

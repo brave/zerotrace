@@ -42,7 +42,7 @@ func hasAnyInterface() bool {
 }
 
 func main() {
-	var addr string
+	var addr, ifaceName string
 	flag.StringVar(&ifaceName, "iface", ifaceNameAny, "Interface name to listen on, default: any")
 	flag.StringVar(&addr, "addr", ":8080", "Address to listen on, default: :8080")
 	flag.Parse()
