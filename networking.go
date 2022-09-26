@@ -32,11 +32,11 @@ func createPkt(conn net.Conn, ipID uint16) ([]byte, error) {
 	}
 
 	// Convert ports from string to int.
-	srcPort, err := strconv.Atoi(strSrcPort)
+	srcPort, err := strconv.ParseInt(strSrcPort, 10, 16)
 	if err != nil {
 		return nil, err
 	}
-	dstPort, err := strconv.Atoi(strDstPort)
+	dstPort, err := strconv.ParseInt(strDstPort, 10, 16)
 	if err != nil {
 		return nil, err
 	}
