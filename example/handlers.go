@@ -182,7 +182,7 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 				// Only log the final message with all latencies calculated,
 				// and don't log other unsolicited echo messages
 				if isValidUUID(string(wsUUID)) {
-					l.Println(string(message))
+					l.Println(wsData)
 				}
 			}
 		}
