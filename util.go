@@ -8,12 +8,12 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-
 	"github.com/google/uuid"
 )
 
 var (
-	invalidInputErr = errors.New("Invalid Input")
+	invalidInputErr    = errors.New("Invalid Input")
+	errInvalidIPHeader = errors.New("invalid IP header")
 )
 
 type formDetails struct {
@@ -72,47 +72,33 @@ func isValidUUID(u string) bool {
 	return err == nil
 }
 
-// fmtTimeMs returns the value (time.Duration) in milliseconds, the inbuilt time.Milliseconds() function only returns an int64 value
-func fmtTimeMs(value time.Duration) float64 {
-	return (float64(value) / float64(time.Millisecond))
-}
-
-// getSentTimestampfromIPId traverses the []SentPacketData slice and returns the HopSentTime associated with the provided ipid, and error if any
-func getSentTimestampfromIPId(sentDataSlice []sentPacketData, ipid uint16) (time.Time, error) {
-	for _, v := range sentDataSlice {
-		if v.HopIPId == ipid {
-			return v.HopSentTime, nil
-		}
+func extractTTL(ipPkt []byte) (uint8, error) {
+	// At the very least, we expect an IP header.
+	if len(ipPkt) < 20 {
+		return 0, errInvalidIPHeader
 	}
-	return time.Now().UTC(), errors.New("IP Id not in sent packets")
-}
 
-// getHeaderFromICMPResponsePayload parses IP headers from ICMP Response Payload of the icmpPkt and returns IP header, and error if any
-func getHeaderFromICMPResponsePayload(icmpPkt []byte) (*layers.IPv4, error) {
-	if len(icmpPkt) < 1 {
-		return nil, errors.New("Invalid IP header")
-	}
-	ipHeaderLength := int((icmpPkt[0] & 0x0F) * 4)
-
-	if len(icmpPkt) < ipHeaderLength {
-		return nil, errors.New("IP header unavailable")
-	}
+	// Try decoding the packet, to see if the header is well-formed.
 	ip := layers.IPv4{}
-	ipErr := ip.DecodeFromBytes(icmpPkt[0:], gopacket.NilDecodeFeedback)
-
-	if ipErr != nil {
-		return nil, ipErr
+	if err := ip.DecodeFromBytes(ipPkt, gopacket.NilDecodeFeedback); err != nil {
+		return 0, err
 	}
 
-	return &ip, nil
+	return uint8(ipPkt[8]), nil
 }
 
-// sliceContains checks if a particular IP Id (uint16 in layers.IPv4) is present in the slice of IP Ids we provide
-func sliceContains(slice []sentPacketData, value uint16) bool {
-	for _, v := range slice {
-		if v.HopIPId == value {
-			return true
-		}
+// extractIPID parses the given IP header, extracts its IP ID, and returns it.
+func extractIPID(ipPkt []byte) (uint16, error) {
+	// At the very least, we expect an IP header.
+	if len(ipPkt) < 20 {
+		return 0, errInvalidIPHeader
 	}
-	return false
+
+	// Try decoding the packet, to see if the header is well-formed.
+	ip := layers.IPv4{}
+	if err := ip.DecodeFromBytes(ipPkt, gopacket.NilDecodeFeedback); err != nil {
+		return 0, err
+	}
+
+	return uint16(ipPkt[4])<<8 | uint16(ipPkt[5]), nil
 }

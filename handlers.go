@@ -97,16 +97,12 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 // likely to corrupt the underlying TCP connection but we don't care about
 // that.
 func traceHandler(w http.ResponseWriter, r *http.Request) {
-	var uuid string
-	for k, v := range r.URL.Query() {
-		if k == "uuid" && isValidUUID(v[0]) {
-			uuid = v[0]
-		} else {
-			http.Error(w, "Invalid UUID", http.StatusInternalServerError)
-			return
-		}
+	var upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			// TODO: Compare to our endpoint origin.
+			return true
+		},
 	}
-	var upgrader = websocket.Upgrader{}
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		l.Println("upgrade:", err)
@@ -116,7 +112,10 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 	myConn := c.UnderlyingConn()
 
-	zeroTraceInstance := newZeroTrace(ifaceName, myConn, uuid)
+	zeroTraceInstance, err := newZeroTrace(ifaceName, myConn)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 
 	err = zeroTraceInstance.Run()
 	if err != nil {

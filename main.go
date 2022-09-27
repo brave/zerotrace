@@ -4,6 +4,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/google/gopacket/pcap"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 const (
@@ -45,21 +47,30 @@ func main() {
 	flag.StringVar(&addr, "addr", ":8080", "Address to listen on, default: :8080")
 	flag.Parse()
 
-	if ifaceName == ifaceNameAny && !hasAnyInterface() {
-		l.Fatal("We were told to use the 'any' interface but it's not present.")
-	}
-
 	router := chi.NewRouter()
 	router.Get("/", indexHandler)
 	router.Get("/ping", pingHandler)
 	router.Get("/echo", echoHandler)
 	router.Get("/trace", traceHandler)
 	router.Post("/measure", measureHandler)
-	srv := http.Server{
+
+	certManager := autocert.Manager{
+		Prompt: autocert.AcceptTOS,
+		Cache:  autocert.DirCache("certs"),
+	}
+	go http.ListenAndServe(":http", certManager.HTTPHandler(nil)) //nolint:errcheck
+	server := &http.Server{
 		Addr:    addr,
 		Handler: router,
+		TLSConfig: &tls.Config{
+			GetCertificate: certManager.GetCertificate,
+		},
+	}
+
+	if ifaceName == ifaceNameAny && !hasAnyInterface() {
+		l.Fatal("We were told to use the 'any' interface but it's not present.")
 	}
 
 	l.Printf("Starting Web service to listen on %s.", addr)
-	l.Println(srv.ListenAndServe())
+	l.Println(server.ListenAndServeTLS("", ""))
 }
