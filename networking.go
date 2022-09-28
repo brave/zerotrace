@@ -1,44 +1,19 @@
-package main
+package zerotrace
 
 import (
 	"net"
 	"strconv"
-	"time"
 
-	"github.com/go-ping/ping"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"golang.org/x/net/ipv4"
 )
 
 const (
-	// The number of ICMP packets we send to a client.
-	icmpCount = 5
-	// The time we're willing to wait for an ICMP response.
-	icmpTimeout = time.Second * 10
 	// The payload that our trace packets carry.
 	tcpPayload  = "trace packet"
 	ipv4Version = uint8(4)
 )
-
-// pingAddr sends ICMP pings to the given address and returns ping
-// statistics.
-func pingAddr(addr string) (*ping.Statistics, error) {
-	pinger, err := ping.NewPinger(addr)
-	if err != nil {
-		return nil, err
-	}
-
-	// Don't use UDP.  Instead, use raw socket pings which require root.
-	pinger.SetPrivileged(true)
-	pinger.Count = icmpCount
-	pinger.Timeout = icmpTimeout
-	if err = pinger.Run(); err != nil { // Blocks until finished.
-		return nil, err
-	}
-
-	return pinger.Statistics(), nil
-}
 
 // createPkt creates and returns a trace packet for the given net.Conn object.
 // Importantly, the function only returns the TCP header and the application
@@ -57,11 +32,11 @@ func createPkt(conn net.Conn, ipID uint16) ([]byte, error) {
 	}
 
 	// Convert ports from string to int.
-	srcPort, err := strconv.Atoi(strSrcPort)
+	srcPort, err := strconv.ParseInt(strSrcPort, 10, 16)
 	if err != nil {
 		return nil, err
 	}
-	dstPort, err := strconv.Atoi(strDstPort)
+	dstPort, err := strconv.ParseInt(strDstPort, 10, 16)
 	if err != nil {
 		return nil, err
 	}

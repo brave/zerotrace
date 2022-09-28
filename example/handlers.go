@@ -7,8 +7,17 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/brave-experiments/zerotrace"
+
 	"github.com/go-ping/ping"
 	"github.com/gorilla/websocket"
+)
+
+const (
+	// The number of ICMP packets we send to a client.
+	icmpCount = 5
+	// The time we're willing to wait for an ICMP response.
+	icmpTimeout = time.Second * 10
 )
 
 // measureHandler serves the form that collects the user's contact data and
@@ -45,6 +54,25 @@ func measureHandler(w http.ResponseWriter, r *http.Request) {
 // we are running.
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, indexPage)
+}
+
+// pingAddr sends ICMP pings to the given address and returns ping
+// statistics.
+func pingAddr(addr string) (*ping.Statistics, error) {
+	pinger, err := ping.NewPinger(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Don't use UDP.  Instead, use raw socket pings which require root.
+	pinger.SetPrivileged(true)
+	pinger.Count = icmpCount
+	pinger.Timeout = icmpTimeout
+	if err = pinger.Run(); err != nil { // Blocks until finished.
+		return nil, err
+	}
+
+	return pinger.Statistics(), nil
 }
 
 // pingHandler implements a one-off measurement for the connecting client.  It
@@ -112,12 +140,12 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 	myConn := c.UnderlyingConn()
 
-	zeroTraceInstance, err := newZeroTrace(ifaceName, myConn)
+	zeroTraceInstance, err := zerotrace.NewZeroTrace(zerotrace.NewDefaultConfig())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	err = zeroTraceInstance.Run()
+	_, err = zeroTraceInstance.CalcRTT(myConn)
 	if err != nil {
 		l.Println("ZeroTrace Run Error: ", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
