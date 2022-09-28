@@ -14,46 +14,60 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-const (
-	// The number of probes we're sending for a given TTL.
-	numProbes = 3
-	// The TTL at which we start sending trace packets.
-	ttlStart = 5
-	// The TTL at which we stop sending trace packets.
-	ttlEnd = 32
-	// The number of bytes per frame that we want libpcap to capture.  500
-	// bytes is enough for ICMP TTL exceeded packets.
-	snapLen = 500
-	// The time we're willing to wait for packets to accumulate in our receive
-	// buffer.
-	pktBufTimeout = time.Millisecond * 10
-)
-
 var (
 	l = log.New(os.Stderr, "latsrv: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
 )
+
+// Config holds configuration options for the ZeroTrace object.
+type Config struct {
+	// NumProbes determines the number of probes we're sending for a given TTL.
+	NumProbes int
+	// TTLStart determines the TTL at which we start sending trace packets.
+	TTLStart int
+	// TTLEnd determines the TTL at which we stop sending trace packets.
+	TTLEnd int
+	// SnapLen determines the number of bytes per frame that we want libpcap to
+	// capture.  500 bytes is enough for ICMP TTL exceeded packets.
+	SnapLen int32
+	// PktBufTimeout determines the time we're willing to wait for packets to
+	// accumulate in our receive buffer.
+	PktBufTimeout time.Duration
+	// Interface determines the network interface that we're going to use to
+	// listen for incoming network packets.
+	Interface string
+}
+
+// NewDefaultConfig returns a configuration object containing the following
+// defaults.  *Note* that you probably need to change the networking interface.
+//
+//   NumProbes:     3
+//   TTLStart:      5
+//   TTLEnd:        32
+//   SnapLen:       500
+//   PktBufTimeout: time.Millisecond * 10
+//   Interface:     "eth0"
+func NewDefaultConfig() *Config {
+	return &Config{
+		NumProbes:     3,
+		TTLStart:      5,
+		TTLEnd:        32,
+		SnapLen:       500,
+		PktBufTimeout: time.Millisecond * 10,
+		Interface:     "eth0",
+	}
+}
 
 // ZeroTrace implements the 0trace traceroute technique:
 // https://seclists.org/fulldisclosure/2007/Jan/145
 type ZeroTrace struct {
 	sync.RWMutex
-	iface string
+	cfg *Config
 }
 
 // NewZeroTrace instantiates and returns a new ZeroTrace object that's going to
-// use the given network interface for its measurement.
-func NewZeroTrace(iface string) (*ZeroTrace, error) {
-	return &ZeroTrace{
-		iface: iface,
-	}, nil
-}
-
-// getIface returns the name of the interface that we're supposed to use for
-// packet capturing.
-func (z *ZeroTrace) getIface() string {
-	z.RLock()
-	defer z.RUnlock()
-	return z.iface
+// use the given configuration for its measurement.
+func NewZeroTrace(c *Config) (*ZeroTrace, error) {
+	return &ZeroTrace{cfg: c}, nil
 }
 
 // sendTracePkts sends trace packets to our target.  Once a packet was sent,
@@ -66,7 +80,7 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 		return
 	}
 
-	for ttl := ttlStart; ttl <= ttlEnd; ttl++ {
+	for ttl := z.cfg.TTLStart; ttl <= z.cfg.TTLEnd; ttl++ {
 		tempConn := conn.(*tls.Conn)
 		tcpConn := tempConn.NetConn()
 		ipConn := ipv4.NewConn(tcpConn)
@@ -77,7 +91,7 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 			return
 		}
 
-		for n := 0; n < numProbes; n++ {
+		for n := 0; n < z.cfg.NumProbes; n++ {
 			ipID := createIPID()
 			pkt, err := createPkt(conn, ipID)
 			if err != nil {
@@ -100,7 +114,7 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 				sent: time.Now().UTC(),
 			}
 		}
-		l.Printf("Sent %d trace packets with TTL %d.", numProbes, ttl)
+		l.Printf("Sent %d trace packets with TTL %d.", z.cfg.NumProbes, ttl)
 	}
 	l.Println("Done sending trace packets.")
 }
@@ -123,7 +137,12 @@ func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
 
 	// Set up our pcap handle.
 	promiscuous := true
-	pcapHdl, err := pcap.OpenLive(z.getIface(), snapLen, promiscuous, pktBufTimeout)
+	pcapHdl, err := pcap.OpenLive(
+		z.cfg.Interface,
+		z.cfg.SnapLen,
+		promiscuous,
+		z.cfg.PktBufTimeout,
+	)
 	if err != nil {
 		return 0, err
 	}

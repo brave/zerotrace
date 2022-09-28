@@ -140,7 +140,7 @@ func traceHandler(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 	myConn := c.UnderlyingConn()
 
-	zeroTraceInstance, err := zerotrace.NewZeroTrace("eth0")
+	zeroTraceInstance, err := zerotrace.NewZeroTrace(zerotrace.NewDefaultConfig())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
