@@ -97,7 +97,6 @@ func sendRawPkt(ipID uint16, ttl uint8, dstAddr net.IP, payload []byte) error {
 	}
 	defer r.Close()
 
-	// TODO: Revisit.
 	iph := &ipv4.Header{
 		Version:  ipv4.Version,
 		Len:      ipv4.HeaderLen,
