@@ -37,20 +37,12 @@ var (
 // https://seclists.org/fulldisclosure/2007/Jan/145
 type ZeroTrace struct {
 	sync.RWMutex
-	iface    string
-	targetIP net.IP
+	iface string
 }
 
 // NewZeroTrace instantiates and returns a new ZeroTrace object that's going to
-// use the given interface for its measurement.
+// use the given network interface for its measurement.
 func NewZeroTrace(iface string) (*ZeroTrace, error) {
-	// s := conn.RemoteAddr().String()
-	// host, _, err := net.SplitHostPort(s)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// net.ParseIP(host)
-
 	return &ZeroTrace{
 		iface: iface,
 	}, nil
@@ -64,17 +56,16 @@ func (z *ZeroTrace) getIface() string {
 	return z.iface
 }
 
-// getTargetIP returns the IP address of the traceroute destination.
-func (z *ZeroTrace) getTargetIP() net.IP {
-	z.RLock()
-	defer z.RUnlock()
-	return z.targetIP
-}
-
 // sendTracePkts sends trace packets to our target.  Once a packet was sent,
 // it's written to the given channel.  The given function is used to create an
 // IP ID that is set in the trace packet's IP header.
 func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, conn net.Conn) {
+	remoteIP, err := extractRemoteIP(conn)
+	if err != nil {
+		l.Printf("Error extracting remote IP address from connection: %v", err)
+		return
+	}
+
 	for ttl := ttlStart; ttl <= ttlEnd; ttl++ {
 		tempConn := conn.(*tls.Conn)
 		tcpConn := tempConn.NetConn()
@@ -97,7 +88,7 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 			if err := sendRawPkt(
 				ipID,
 				uint8(ttl),
-				z.getTargetIP(),
+				remoteIP,
 				pkt,
 			); err != nil {
 				l.Printf("Error sending raw packet: %v", err)
@@ -117,8 +108,12 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 // CalcRTT coordinates our 0trace traceroute and returns the RTT to the target
 // or, if the target won't respond to us, the RTT of the hop that's closest.
 func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
+	remoteIP, err := extractRemoteIP(conn)
+	if err != nil {
+		return 0, err
+	}
 
-	state := newTrState(z.getTargetIP())
+	state := newTrState(remoteIP)
 	ticker := time.NewTicker(time.Second)
 	quit := make(chan bool)
 	defer close(quit)

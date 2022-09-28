@@ -5,6 +5,18 @@ import (
 	"testing"
 )
 
+func TestExtractRemoteIP(t *testing.T) {
+	c := &mockConn{}
+	ip, err := extractRemoteIP(c)
+	if err != nil {
+		t.Fatalf("Expected no error but got: %v", err)
+	}
+
+	if ip.String() != dstAddr {
+		t.Fatalf("Expected IP address %s but got %s.", dstAddr, ip.String())
+	}
+}
+
 func TestInvalidExtractIPID(t *testing.T) {
 	ipHdr := []byte{0x00}
 	_, err := extractIPID(ipHdr)

@@ -2,6 +2,7 @@ package zerotrace
 
 import (
 	"errors"
+	"net"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -10,6 +11,16 @@ import (
 var (
 	errInvalidIPHeader = errors.New("invalid IP header")
 )
+
+// extractRemoteIP extracts the remote IP address from the given net.Conn.
+func extractRemoteIP(c net.Conn) (net.IP, error) {
+	s := c.RemoteAddr().String()
+	host, _, err := net.SplitHostPort(s)
+	if err != nil {
+		return nil, err
+	}
+	return net.ParseIP(host), nil
+}
 
 func extractTTL(ipPkt []byte) (uint8, error) {
 	// At the very least, we expect an IP header.
