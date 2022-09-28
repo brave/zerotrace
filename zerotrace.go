@@ -107,6 +107,9 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 
 // CalcRTT coordinates our 0trace traceroute and returns the RTT to the target
 // or, if the target won't respond to us, the RTT of the hop that's closest.
+// The given net.Conn represents an already-established TCP connection to the
+// target.  Note that the TCP connection may be corrupted as part of the 0trace
+// measurement.
 func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
 	remoteIP, err := extractRemoteIP(conn)
 	if err != nil {
