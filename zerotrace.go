@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	l = log.New(os.Stderr, "latsrv: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
+	l = log.New(os.Stderr, "0trace: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
 )
 
 // Config holds configuration options for the ZeroTrace object.
