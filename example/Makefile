@@ -1,5 +1,5 @@
-binary = latsrv
-godeps = *.go go.mod go.sum
+binary = example
+godeps = *.go
 
 .PHONY: all $(binary) lint clean
 
