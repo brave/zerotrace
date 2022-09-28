@@ -66,8 +66,8 @@ type ZeroTrace struct {
 
 // NewZeroTrace instantiates and returns a new ZeroTrace object that's going to
 // use the given configuration for its measurement.
-func NewZeroTrace(c *Config) (*ZeroTrace, error) {
-	return &ZeroTrace{cfg: c}, nil
+func NewZeroTrace(c *Config) *ZeroTrace {
+	return &ZeroTrace{cfg: c}
 }
 
 // sendTracePkts sends trace packets to our target.  Once a packet was sent,
