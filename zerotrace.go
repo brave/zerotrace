@@ -213,13 +213,6 @@ func (z *ZeroTrace) recvRespPkts(pcapHdl *pcap.Handle, c chan *respPkt, quit cha
 				l.Printf("Failed to extract response packet: %v", err)
 				continue
 			}
-			l.Printf("Got resp. packet with IP ID=%d\n\tTTL: %d\n\t"+
-				"Sent: %s\n\tRecvd: %s (from %s)\n",
-				respPkt.ipID,
-				respPkt.ttl,
-				respPkt.sent,
-				respPkt.recvd,
-				respPkt.recvdFrom)
 			c <- respPkt
 		}
 	}
