@@ -1,6 +1,6 @@
 # ZeroTrace
 
-[![GoDoc](https://pkg.go.dev/badge/github.com/brave-experiments/zerotrace?utm_source=godoc)](https://pkg.go.dev/github.com/brave-experiments/zerotrace)
+[![GoDoc](https://pkg.go.dev/badge/github.com/brave/zerotrace?utm_source=godoc)](https://pkg.go.dev/github.com/brave/zerotrace)
 
 Imagine you run a Web service and want to determine the network-level round trip
 time to clients that connect to your Web service.  A simple ping is unlikely to
@@ -28,11 +28,11 @@ that's closest) or an error.
 ## Configuration
 
 ZeroTrace's
-[constructor](https://pkg.go.dev/github.com/brave-experiments/zerotrace#NewZeroTrace)
+[constructor](https://pkg.go.dev/github.com/brave/zerotrace#NewZeroTrace)
 expects a configuration object as argument.  Take a look at the
-[`Config`](https://pkg.go.dev/github.com/brave-experiments/zerotrace#Config)
+[`Config`](https://pkg.go.dev/github.com/brave/zerotrace#Config)
 struct to learn more about configuration options.  The function
-[`NewDefaultConfig`](https://pkg.go.dev/github.com/brave-experiments/zerotrace#NewDefaultConfig)
+[`NewDefaultConfig`](https://pkg.go.dev/github.com/brave/zerotrace#NewDefaultConfig)
 returns a default configuration object with reasonable defaults.
 
 ## Example

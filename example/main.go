@@ -9,7 +9,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/brave-experiments/zerotrace"
+	"github.com/brave/zerotrace"
 	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/acme/autocert"

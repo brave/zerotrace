@@ -1,4 +1,4 @@
-module github.com/brave-experiments/zerotrace
+module github.com/brave/zerotrace
 
 go 1.19
 
