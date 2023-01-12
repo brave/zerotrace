@@ -74,6 +74,9 @@ func NewZeroTrace(c *Config) *ZeroTrace {
 // it's written to the given channel.  The given function is used to create an
 // IP ID that is set in the trace packet's IP header.
 func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, conn net.Conn) {
+	var ipConn *ipv4.Conn
+	var tcpConn net.Conn
+
 	remoteIP, err := extractRemoteIP(conn)
 	if err != nil {
 		l.Printf("Error extracting remote IP address from connection: %v", err)
@@ -81,9 +84,16 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 	}
 
 	for ttl := z.cfg.TTLStart; ttl <= z.cfg.TTLEnd; ttl++ {
-		tempConn := conn.(*tls.Conn)
-		tcpConn := tempConn.NetConn()
-		ipConn := ipv4.NewConn(tcpConn)
+		switch tempConn := conn.(type) {
+		case *tls.Conn:
+			tcpConn = tempConn.NetConn()
+		case *net.TCPConn:
+			tcpConn = tempConn
+		default:
+			l.Print("Ignoring non-TLS, non-TCP packet.")
+			continue
+		}
+		ipConn = ipv4.NewConn(tcpConn)
 
 		// Set our net.Conn's TTL for future outgoing packets.
 		if err := ipConn.SetTTL(ttl); err != nil {
