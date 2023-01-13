@@ -14,6 +14,7 @@ const (
 
 var (
 	errInvalidResp = errors.New("got response for non-existing trace packet")
+	errNoResp      = errors.New("got no response packet")
 )
 
 // tracePkts represents a trace packet that we send to the client to determine
@@ -46,9 +47,9 @@ func (p *tracePkt) String() string {
 
 // trState represents our traceroute state machine.  We keep track of the
 // following:
-//   1) The IP address of the client that is the target of our traceroute.
-//   2) Packets that we sent and received as part of the traceroute.
-//   3) The IP IDs that we use as part of the traceroute.
+//  1. The IP address of the client that is the target of our traceroute.
+//  2. Packets that we sent and received as part of the traceroute.
+//  3. The IP IDs that we use as part of the traceroute.
 type trState struct {
 	sync.RWMutex
 	dstAddr   net.IP
@@ -142,7 +143,7 @@ func (s *trState) Summary() string {
 // trace packet that was answered by the client itself *or* for the trace
 // packet that made it the farthest to the client (i.e., the packet whose TTL
 // is the highest).
-func (s *trState) CalcRTT() time.Duration {
+func (s *trState) CalcRTT() (time.Duration, error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -176,6 +177,9 @@ func (s *trState) CalcRTT() time.Duration {
 			}
 		}
 	}
+	if closestPkt == nil {
+		return 0, errNoResp
+	}
 	l.Printf("Closest trace packet: %s", closestPkt)
-	return closestPkt.recvd.Sub(closestPkt.sent)
+	return closestPkt.recvd.Sub(closestPkt.sent), nil
 }

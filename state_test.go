@@ -143,7 +143,10 @@ func TestCalcRTT(t *testing.T) {
 		sent:  now.Add(-expectedRTT),
 		recvd: now,
 	})
-	rtt := s.CalcRTT()
+	rtt, err := s.CalcRTT()
+	if err != nil {
+		t.Fatalf("Expected no error but got: %v", err)
+	}
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
@@ -156,7 +159,10 @@ func TestCalcRTT(t *testing.T) {
 		sent:  now.Add(-expectedRTT),
 		recvd: now,
 	})
-	rtt = s.CalcRTT()
+	rtt, err = s.CalcRTT()
+	if err != nil {
+		t.Fatalf("Expected no error but got: %v", err)
+	}
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
@@ -170,7 +176,10 @@ func TestCalcRTT(t *testing.T) {
 		sent:  now.Add(-expectedRTT),
 		recvd: now,
 	})
-	rtt = s.CalcRTT()
+	rtt, err = s.CalcRTT()
+	if err != nil {
+		t.Fatalf("Expected no error but got: %v", err)
+	}
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
@@ -181,7 +190,10 @@ func TestCalcRTT(t *testing.T) {
 		ipID: 3,
 		sent: now.Add(-time.Second * 10),
 	})
-	rtt = s.CalcRTT()
+	rtt, err = s.CalcRTT()
+	if err != nil {
+		t.Fatalf("Expected no error but got: %v", err)
+	}
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
@@ -197,7 +209,10 @@ func TestCalcRTT(t *testing.T) {
 		recvd:     now,
 		recvdFrom: dummyAddr,
 	})
-	rtt = s.CalcRTT()
+	rtt, err = s.CalcRTT()
+	if err != nil {
+		t.Fatalf("Expected no error but got: %v", err)
+	}
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}

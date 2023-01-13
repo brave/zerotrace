@@ -40,12 +40,12 @@ type Config struct {
 // NewDefaultConfig returns a configuration object containing the following
 // defaults.  *Note* that you probably need to change the networking interface.
 //
-//   NumProbes:     3
-//   TTLStart:      5
-//   TTLEnd:        32
-//   SnapLen:       500
-//   PktBufTimeout: time.Millisecond * 10
-//   Interface:     "eth0"
+//	NumProbes:     3
+//	TTLStart:      5
+//	TTLEnd:        32
+//	SnapLen:       500
+//	PktBufTimeout: time.Millisecond * 10
+//	Interface:     "eth0"
 func NewDefaultConfig() *Config {
 	return &Config{
 		NumProbes:     3,
@@ -191,7 +191,7 @@ loop:
 		}
 	}
 
-	return state.CalcRTT(), nil
+	return state.CalcRTT()
 }
 
 // recvRespPkts uses the given pcap handle to read incoming packets and filters
