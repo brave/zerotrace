@@ -10,13 +10,14 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
 	"golang.org/x/net/ipv4"
 )
 
 var (
 	l = log.New(os.Stderr, "0trace: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
 )
+
+type receiver chan *respPkt
 
 // Config holds configuration options for the ZeroTrace object.
 type Config struct {
@@ -40,12 +41,12 @@ type Config struct {
 // NewDefaultConfig returns a configuration object containing the following
 // defaults.  *Note* that you probably need to change the networking interface.
 //
-//   NumProbes:     3
-//   TTLStart:      5
-//   TTLEnd:        32
-//   SnapLen:       500
-//   PktBufTimeout: time.Millisecond * 10
-//   Interface:     "eth0"
+//	NumProbes:     3
+//	TTLStart:      5
+//	TTLEnd:        32
+//	SnapLen:       500
+//	PktBufTimeout: time.Millisecond * 10
+//	Interface:     "eth0"
 func NewDefaultConfig() *Config {
 	return &Config{
 		NumProbes:     3,
@@ -61,13 +62,28 @@ func NewDefaultConfig() *Config {
 // https://seclists.org/fulldisclosure/2007/Jan/145
 type ZeroTrace struct {
 	sync.RWMutex
-	cfg *Config
+	quit               chan struct{}
+	incoming, outgoing chan receiver
+	cfg                *Config
 }
 
-// NewZeroTrace instantiates and returns a new ZeroTrace object that's going to
+// OpenZeroTrace instantiates and starts a new ZeroTrace object that's going to
 // use the given configuration for its measurement.
-func NewZeroTrace(c *Config) *ZeroTrace {
-	return &ZeroTrace{cfg: c}
+func OpenZeroTrace(c *Config) *ZeroTrace {
+	quit := make(chan struct{})
+	zt := &ZeroTrace{
+		cfg:      c,
+		incoming: make(chan receiver),
+		outgoing: make(chan receiver),
+		quit:     quit,
+	}
+	go zt.listen(quit)
+	return zt
+}
+
+// Close closes this instance's
+func (z *ZeroTrace) Close() {
+	close(z.quit)
 }
 
 // sendTracePkts sends trace packets to our target.  Once a packet was sent,
@@ -86,6 +102,8 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 		ipConn := ipv4.NewConn(tcpConn)
 
 		// Set our net.Conn's TTL for future outgoing packets.
+		// We cannot parallelize this loop because the TTL is socket-dependent
+		// and we only have a single socket to work with.
 		if err := ipConn.SetTTL(ttl); err != nil {
 			l.Printf("Error setting TTL: %v", err)
 			return
@@ -114,7 +132,6 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 				sent: time.Now().UTC(),
 			}
 		}
-		l.Printf("Sent %d trace packets with TTL %d.", z.cfg.NumProbes, ttl)
 	}
 	l.Println("Done sending trace packets.")
 }
@@ -125,38 +142,28 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 // target.  Note that the TCP connection may be corrupted as part of the 0trace
 // measurement.
 func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
+	var (
+		state     *trState
+		ticker    = time.NewTicker(time.Second)
+		quit      = make(chan struct{})
+		respChan  = make(chan *respPkt)
+		traceChan = make(chan *tracePkt)
+	)
+	defer close(quit)
+	defer close(respChan)
+	defer close(traceChan)
+
 	remoteIP, err := extractRemoteIP(conn)
 	if err != nil {
 		return 0, err
 	}
+	state = newTrState(remoteIP)
 
-	state := newTrState(remoteIP)
-	ticker := time.NewTicker(time.Second)
-	quit := make(chan bool)
-	defer close(quit)
-
-	// Set up our pcap handle.
-	promiscuous := true
-	pcapHdl, err := pcap.OpenLive(
-		z.cfg.Interface,
-		z.cfg.SnapLen,
-		promiscuous,
-		z.cfg.PktBufTimeout,
-	)
-	if err != nil {
-		return 0, err
-	}
-	if err = pcapHdl.SetBPFFilter("icmp"); err != nil {
-		return 0, err
-	}
-	defer pcapHdl.Close()
-
-	// Spawn goroutine that listens for incoming ICMP response packets.
-	respChan := make(chan *respPkt)
-	go z.recvRespPkts(pcapHdl, respChan, quit)
+	// Register for receiving a copy of newly-captured ICMP responses.
+	z.incoming <- respChan
+	defer func() { z.outgoing <- respChan }()
 
 	// Spawn goroutine that sends trace packets.
-	traceChan := make(chan *tracePkt)
 	go z.sendTracePkts(traceChan, state.createIPID, conn)
 
 loop:
@@ -184,24 +191,36 @@ loop:
 	return state.CalcRTT(), nil
 }
 
-// recvRespPkts uses the given pcap handle to read incoming packets and filters
-// for ICMP TTL exceeded packets that are then sent to the given channel.  The
-// function returns when the given quit channel is closed.
-func (z *ZeroTrace) recvRespPkts(pcapHdl *pcap.Handle, c chan *respPkt, quit chan bool) {
-	packetStream := gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
+// listen opens a pcap handle and begins listening for incoming ICMP packets.
+// New traceroutes register themselves with this function's event loop to
+// receive a copy of newly-captured ICMP packets.
+func (z *ZeroTrace) listen(quit chan struct{}) {
+	var (
+		receivers = make(map[receiver]bool)
+		stream    *gopacket.PacketSource
+	)
+
+	pcapHdl, err := openPcap(z.cfg.Interface, z.cfg.SnapLen, z.cfg.PktBufTimeout)
+	if err != nil {
+		log.Fatalf("Error opening pcap device: %v", err)
+	}
+	defer pcapHdl.Close()
+	stream = gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
 
 	for {
 		select {
 		case <-quit:
-			l.Println("Done reading packets.")
 			return
-		case pkt := <-packetStream.Packets():
+		case r := <-z.incoming:
+			receivers[r] = true
+		case r := <-z.outgoing:
+			delete(receivers, r)
+		case pkt := <-stream.Packets():
 			if pkt == nil {
 				continue
 			}
 			ipLayer := pkt.Layer(layers.LayerTypeIPv4)
 			icmpLayer := pkt.Layer(layers.LayerTypeICMPv4)
-
 			if ipLayer == nil || icmpLayer == nil {
 				continue
 			}
@@ -210,10 +229,12 @@ func (z *ZeroTrace) recvRespPkts(pcapHdl *pcap.Handle, c chan *respPkt, quit cha
 			// exceeded one we are looking for
 			respPkt, err := z.extractRcvdPkt(pkt)
 			if err != nil {
-				l.Printf("Failed to extract response packet: %v", err)
-				continue
+				log.Fatalf("Error extracing response packet: %v", err)
 			}
-			c <- respPkt
+			// Fan-out new packet to all running traceroutes.
+			for r := range receivers {
+				r <- respPkt
+			}
 		}
 	}
 }

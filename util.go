@@ -3,9 +3,11 @@ package zerotrace
 import (
 	"errors"
 	"net"
+	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
 )
 
 var (
@@ -51,4 +53,22 @@ func extractIPID(ipPkt []byte) (uint16, error) {
 	}
 
 	return uint16(ipPkt[4])<<8 | uint16(ipPkt[5]), nil
+}
+
+func openPcap(iface string, snapLen int32, timeout time.Duration) (*pcap.Handle, error) {
+	// Set up our pcap handle.
+	promiscuous := true
+	pcapHdl, err := pcap.OpenLive(
+		iface,
+		snapLen,
+		promiscuous,
+		timeout,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err = pcapHdl.SetBPFFilter("icmp"); err != nil {
+		return nil, err
+	}
+	return pcapHdl, nil
 }
