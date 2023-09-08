@@ -52,6 +52,7 @@ func createPkt(conn net.Conn, ipID uint16) ([]byte, error) {
 	tcpLayer := &layers.TCP{
 		SrcPort: layers.TCPPort(srcPort),
 		DstPort: layers.TCPPort(dstPort),
+		Window:  500,
 		PSH:     true,
 		ACK:     true,
 	}
