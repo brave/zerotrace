@@ -14,14 +14,14 @@ var (
 func TestIsAnswered(t *testing.T) {
 	p := &tracePkt{}
 
-	if p.IsAnswered() {
+	if p.isAnswered() {
 		t.Fatal("Expected empty trace packet to be un-answered.")
 	}
 
 	now := time.Now().UTC()
 	p.sent = now
 	p.recvd = now
-	if !p.IsAnswered() {
+	if !p.isAnswered() {
 		t.Fatal("Expected answered trace packet to be answered.")
 	}
 }
@@ -52,7 +52,7 @@ func TestCreateIPID(t *testing.T) {
 func TestAddTracePkt(t *testing.T) {
 	s := newTrState(dummyAddr)
 
-	s.AddTracePkt(&tracePkt{
+	s.addTracePkt(&tracePkt{
 		ttl:  1,
 		ipID: 1,
 		sent: time.Now().UTC(),
@@ -75,16 +75,16 @@ func TestAddRespPkt(t *testing.T) {
 
 	// Adding a packet in response to a non-existing trace packet should give
 	// us an error.
-	if err := s.AddRespPkt(p); !errors.Is(err, errInvalidResp) {
+	if err := s.addRespPkt(p); !errors.Is(err, errInvalidResp) {
 		t.Fatalf("Expected error %v but got %v.", errInvalidResp, err)
 	}
 
-	s.AddTracePkt(&tracePkt{
+	s.addTracePkt(&tracePkt{
 		ttl:  1,
 		ipID: 1,
 		sent: time.Now().UTC(),
 	})
-	if err := s.AddRespPkt(p); err != nil {
+	if err := s.addRespPkt(p); err != nil {
 		t.Fatalf("Expected error nil but got %v.", err)
 	}
 }
@@ -98,36 +98,36 @@ func TestIsFinished(t *testing.T) {
 		sent: now,
 	}
 
-	s.AddTracePkt(p)
-	if s.IsFinished() {
+	s.addTracePkt(p)
+	if s.isFinished() {
 		t.Fatal("Expected traceroute to be unfinished.")
 	}
 
 	p.sent = now.Add(-reqTimeout)
-	if !s.IsFinished() {
+	if !s.isFinished() {
 		t.Fatal("Expected traceroute to be finished.")
 	}
 
 	p.recvd = now
-	if !s.IsFinished() {
+	if !s.isFinished() {
 		t.Fatal("Expected traceroute to be finished.")
 	}
 }
 
 func TestSummary(t *testing.T) {
 	s := newTrState(dummyAddr)
-	if len(s.Summary()) == 0 {
+	if len(s.summary()) == 0 {
 		t.Fatal("Expected string summary of traceroute.")
 	}
 
 	now := time.Now().UTC()
-	s.AddTracePkt(&tracePkt{
+	s.addTracePkt(&tracePkt{
 		ipID:  1,
 		ttl:   1,
 		sent:  now,
 		recvd: now,
 	})
-	if len(s.Summary()) == 0 {
+	if len(s.summary()) == 0 {
 		t.Fatal("Expected string summary of traceroute.")
 	}
 }
@@ -137,26 +137,26 @@ func TestCalcRTT(t *testing.T) {
 	now := time.Now().UTC()
 
 	expectedRTT := time.Second
-	s.AddTracePkt(&tracePkt{
+	s.addTracePkt(&tracePkt{
 		ttl:   1,
 		ipID:  1,
 		sent:  now.Add(-expectedRTT),
 		recvd: now,
 	})
-	rtt := s.CalcRTT()
+	rtt := s.calcRTT()
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
 
 	// Add a trace packet with an identical TTL but a lower RTT.
 	expectedRTT = time.Millisecond * 500
-	s.AddTracePkt(&tracePkt{
+	s.addTracePkt(&tracePkt{
 		ttl:   1,
 		ipID:  2,
 		sent:  now.Add(-expectedRTT),
 		recvd: now,
 	})
-	rtt = s.CalcRTT()
+	rtt = s.calcRTT()
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
@@ -164,24 +164,24 @@ func TestCalcRTT(t *testing.T) {
 	// Add a trace packet with a higher TTL (i.e., it got closer to the
 	// target).
 	expectedRTT = time.Second * 2
-	s.AddTracePkt(&tracePkt{
+	s.addTracePkt(&tracePkt{
 		ttl:   2,
 		ipID:  2,
 		sent:  now.Add(-expectedRTT),
 		recvd: now,
 	})
-	rtt = s.CalcRTT()
+	rtt = s.calcRTT()
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
 
 	// Add an unanswered packet and make sure that it doesn't affect the RTT.
-	s.AddTracePkt(&tracePkt{
+	s.addTracePkt(&tracePkt{
 		ttl:  3,
 		ipID: 3,
 		sent: now.Add(-time.Second * 10),
 	})
-	rtt = s.CalcRTT()
+	rtt = s.calcRTT()
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
@@ -190,14 +190,14 @@ func TestCalcRTT(t *testing.T) {
 	// answered by the destination itself, so it should be used to calculate
 	// the RTT.
 	expectedRTT = time.Second * 3
-	s.AddTracePkt(&tracePkt{
+	s.addTracePkt(&tracePkt{
 		ttl:       1,
 		ipID:      4,
 		sent:      now.Add(-expectedRTT),
 		recvd:     now,
 		recvdFrom: dummyAddr,
 	})
-	rtt = s.CalcRTT()
+	rtt = s.calcRTT()
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}

@@ -171,24 +171,24 @@ loop:
 		select {
 		// We just sent a trace packet.
 		case tracePkt := <-traceChan:
-			state.AddTracePkt(tracePkt)
+			state.addTracePkt(tracePkt)
 
 		// We just received a packet in response to a trace packet.
 		case respPkt := <-respChan:
-			if err := state.AddRespPkt(respPkt); err != nil {
+			if err := state.addRespPkt(respPkt); err != nil {
 				l.Printf("Error adding response packet: %v", err)
 			}
 
 		// Check if we're done with the traceroute.
 		case <-ticker.C:
-			state.Summary()
-			if state.IsFinished() {
+			state.summary()
+			if state.isFinished() {
 				break loop
 			}
 		}
 	}
 
-	return state.CalcRTT(), nil
+	return state.calcRTT(), nil
 }
 
 // listen opens a pcap handle and begins listening for incoming ICMP packets.
