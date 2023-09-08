@@ -38,9 +38,8 @@ func (p *tracePkt) isAnswered() bool {
 
 // String implements the Stringer interface.
 func (p *tracePkt) String() string {
-	return fmt.Sprintf("Trace packet with IP ID=%d\n\tTTL: %d\n\t"+
-		"Sent: %s\n\tRecvd: %s (from %s)\n",
-		p.ipID, p.ttl, p.sent, p.recvd, p.recvdFrom,
+	return fmt.Sprintf("TTL=%d, IP ID=%d, sender=%s",
+		p.ttl, p.ipID, p.recvdFrom,
 	)
 }
 
@@ -146,7 +145,6 @@ func (s *trState) calcRTT() time.Duration {
 	s.RLock()
 	defer s.RUnlock()
 
-	l.Printf("Iterating over %d trace packets.", len(s.tracePkts))
 	var closestPkt *tracePkt
 	for _, p := range s.tracePkts {
 		if !p.isAnswered() {
@@ -176,6 +174,6 @@ func (s *trState) calcRTT() time.Duration {
 			}
 		}
 	}
-	l.Printf("Closest trace packet: %s", closestPkt)
+	l.Printf("Closest: %s", closestPkt)
 	return closestPkt.recvd.Sub(closestPkt.sent)
 }

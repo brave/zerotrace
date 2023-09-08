@@ -133,7 +133,6 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 			}
 		}
 	}
-	l.Println("Done sending trace packets.")
 }
 
 // CalcRTT coordinates our 0trace traceroute and returns the RTT to the target
