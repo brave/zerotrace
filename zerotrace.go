@@ -98,30 +98,32 @@ func (z *ZeroTrace) sendTracePkts(
 		return
 	}
 
+	l.Println("Starting to send trace packets.")
+	defer l.Println("Done sending trace packets.")
+
 	for ttl := z.cfg.TTLStart; ttl <= z.cfg.TTLEnd; ttl++ {
-		for n := 0; n < z.cfg.NumProbes; n++ {
-			ipID := createIPID()
-			pkt, err := createPkt(conn)
-			if err != nil {
-				l.Printf("Error creating packet: %v", err)
-				return
-			}
+		// Parallelize the sending of trace packets.
+		go func(ttl uint8) {
+			for n := 0; n < z.cfg.NumProbes; n++ {
+				pkt, err := createPkt(conn)
+				if err != nil {
+					l.Printf("Error creating trace packet: %v", err)
+					return
+				}
 
-			if err := sendRawPkt(
-				ipID,
-				uint8(ttl),
-				remoteIP,
-				pkt,
-			); err != nil {
-				l.Printf("Error sending raw packet: %v", err)
-			}
+				ipID := createIPID()
+				if err := sendRawPkt(ipID, uint8(ttl), remoteIP, pkt); err != nil {
+					l.Printf("Error sending trace packet: %v", err)
+					continue
+				}
 
-			c <- &tracePkt{
-				ttl:  uint8(ttl),
-				ipID: ipID,
-				sent: time.Now().UTC(),
+				c <- &tracePkt{
+					ttl:  ttl,
+					ipID: ipID,
+					sent: time.Now().UTC(),
+				}
 			}
-		}
+		}(uint8(ttl))
 	}
 }
 
