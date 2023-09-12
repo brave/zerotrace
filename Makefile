@@ -1,16 +1,18 @@
-.PHONY: all test coverage lint clean
+DEPS = *.go go.mod go.sum
 
-godeps = *.go go.mod go.sum
-
+.PHONY: all
 all: test lint
 
-test:
-	go test -cover ./...
+.PHONY: test
+test: $(DEPS)
+	go test -cover -race ./...
 
-coverage:
+.PHONY: coverage
+coverage: $(DEPS)
 	go test -coverprofile=cover.out .
 	go tool cover -html=cover.out
 	rm cover.out
 
-lint:
+.PHONY: lint
+lint: $(DEPS)
 	golangci-lint run

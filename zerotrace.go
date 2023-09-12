@@ -64,7 +64,7 @@ type ZeroTrace struct {
 	quit               chan struct{}
 	incoming, outgoing chan receiver
 	rawConn            *ipv4.RawConn
-	ipids              *ipIdState
+	ipids              *ipIdPool
 }
 
 // OpenZeroTrace instantiates and starts a new ZeroTrace object that's going to
@@ -87,14 +87,55 @@ func OpenZeroTrace(c *Config) (*ZeroTrace, error) {
 	return zt, nil
 }
 
-// Close closes this instance's
+// Close closes this ZeroTrace object.
 func (z *ZeroTrace) Close() {
 	close(z.quit)
 }
 
-// sendTracePkts sends trace packets to our target.  Once a packet was sent,
-// it's written to the given channel.  The given function is used to create an
-// IP ID that is set in the trace packet's IP header.
+// CalcRTT coordinates our 0trace traceroute and returns the RTT to the target
+// or, if the target won't respond to us, the RTT of the hop that's closest.
+// The given net.Conn represents an already-established TCP connection to the
+// target.  Note that the TCP connection may be corrupted as part of the 0trace
+// measurement.
+func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
+	var (
+		state     *trState
+		wg        sync.WaitGroup
+		respChan  = make(chan *respPkt)
+		traceChan = make(chan *tracePkt)
+	)
+	defer close(respChan)
+	defer close(traceChan)
+
+	remoteIP, err := extractRemoteIP(conn)
+	if err != nil {
+		return 0, err
+	}
+	state = newTrState(remoteIP)
+
+	// Register for receiving a copy of newly-captured ICMP responses.
+	z.incoming <- respChan
+	defer func() { z.outgoing <- respChan }()
+
+	// Spawn goroutine that sends trace packets.
+	wg.Add(1)
+	go z.sendTracePkts(traceChan, conn, &wg)
+
+	for {
+		select {
+		case tracePkt := <-traceChan:
+			state.addTracePkt(tracePkt) // Sent new trace packet.
+		case respPkt := <-respChan:
+			state.addRespPkt(respPkt) // Received new response packet.
+		case <-state.done():
+			wg.Wait()
+			return state.calcRTT()
+		}
+	}
+}
+
+// sendTracePkts sends a burst of trace packets to our target.  Once a packet
+// was sent, it's written to the given channel.
 func (z *ZeroTrace) sendTracePkts(
 	c chan *tracePkt,
 	conn net.Conn,
@@ -145,65 +186,6 @@ func (z *ZeroTrace) sendTracePkts(
 	}
 }
 
-// CalcRTT coordinates our 0trace traceroute and returns the RTT to the target
-// or, if the target won't respond to us, the RTT of the hop that's closest.
-// The given net.Conn represents an already-established TCP connection to the
-// target.  Note that the TCP connection may be corrupted as part of the 0trace
-// measurement.
-func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
-	var (
-		state     *trState
-		wg        sync.WaitGroup
-		ticker    = time.NewTicker(time.Second)
-		respChan  = make(chan *respPkt)
-		traceChan = make(chan *tracePkt)
-	)
-	defer close(respChan)
-	defer close(traceChan)
-
-	remoteIP, err := extractRemoteIP(conn)
-	if err != nil {
-		return 0, err
-	}
-	state = newTrState(remoteIP)
-
-	// Register for receiving a copy of newly-captured ICMP responses.
-	z.incoming <- respChan
-	defer func() { z.outgoing <- respChan }()
-
-	// Spawn goroutine that sends trace packets.
-	wg.Add(1)
-	go z.sendTracePkts(traceChan, conn, &wg)
-
-loop:
-	for {
-		select {
-		// We just sent a trace packet.
-		case tracePkt := <-traceChan:
-			state.addTracePkt(tracePkt)
-
-		// We just received a packet in response to a trace packet.
-		case respPkt := <-respChan:
-
-			if err := state.addRespPkt(respPkt); err != nil {
-				l.Printf("Error adding response packet: %v", err)
-			}
-
-		// Check if we're done with the traceroute.
-		case <-ticker.C:
-			state.summary()
-			if state.isFinished() {
-				// Wait until we're done sending trace packets.
-				wg.Wait()
-				l.Println("Done collecting response packets.")
-				break loop
-			}
-		}
-	}
-
-	return state.calcRTT()
-}
-
 // listen opens a pcap handle and begins listening for incoming ICMP packets.
 // New traceroutes register themselves with this function's event loop to
 // receive a copy of newly-captured ICMP packets.
@@ -221,7 +203,7 @@ func (z *ZeroTrace) listen() {
 	defer pcapHdl.Close()
 	stream = gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
 
-	l.Println("Done setting up.  Starting listening loop.")
+	l.Println("Starting listening loop.")
 	for {
 		select {
 		case <-z.quit:

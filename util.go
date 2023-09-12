@@ -40,8 +40,8 @@ func extractIPID(ipPkt []byte) (uint16, error) {
 	return uint16(ipPkt[4])<<8 | uint16(ipPkt[5]), nil
 }
 
+// openPcap returns a new pcap handle that listens for ICMP packets.
 func openPcap(iface string, snapLen int32, timeout time.Duration) (*pcap.Handle, error) {
-	// Set up our pcap handle.
 	promiscuous := true
 	pcapHdl, err := pcap.OpenLive(
 		iface,
