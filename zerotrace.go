@@ -111,7 +111,6 @@ func (z *ZeroTrace) sendTracePkts(
 		l.Printf("Error creating trace packet payload: %v", err)
 		return
 	}
-	hdr := newIpv4Header(0, 0, dstAddr, len(pktPayload))
 
 	l.Println("Starting to send trace packets.")
 	defer l.Println("Done sending trace packets.")
@@ -119,7 +118,7 @@ func (z *ZeroTrace) sendTracePkts(
 	for ttl := z.cfg.TTLStart; ttl <= z.cfg.TTLEnd; ttl++ {
 		// Parallelize the sending of trace packets.
 		go func(ttl int) {
-			hdr.TTL = ttl
+			hdr := newIpv4Header(ttl, 0, dstAddr, len(pktPayload))
 			// Send n probe packets for redundancy, in case some get lost.
 			// Each probe packet shares a TTL but has a unique ID.
 			for n := 0; n < z.cfg.NumProbes; n++ {
