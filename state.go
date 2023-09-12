@@ -49,7 +49,6 @@ type trState struct {
 	sync.Mutex // Guard tracePkts.
 	dstAddr    net.IP
 	tracePkts  map[uint16]*tracePkt
-	doneCh     chan struct{}
 }
 
 // newTrState returns a new traceroute state object.
@@ -57,12 +56,7 @@ func newTrState(dstAddr net.IP) *trState {
 	return &trState{
 		dstAddr:   dstAddr,
 		tracePkts: make(map[uint16]*tracePkt),
-		doneCh:    make(chan struct{}),
 	}
-}
-
-func (s *trState) done() chan struct{} {
-	return s.doneCh
 }
 
 // AddTracePkt adds to the state map a trace packet.
@@ -86,16 +80,15 @@ func (s *trState) addRespPkt(p *respPkt) {
 	// Mark the trace packet as "received".
 	tracePkt.recvd = p.recvd
 	tracePkt.recvdFrom = p.recvdFrom
-
-	if s.isFinished() {
-		close(s.doneCh)
-	}
 }
 
 // isFinished returns true if our state indicates that the 0trace scan is
 // finished.  That's the case when we haven't received any response packets
 // since the timeout.
 func (s *trState) isFinished() bool {
+	s.Lock()
+	defer s.Unlock()
+
 	now := time.Now().UTC()
 	for _, p := range s.tracePkts {
 		if p.isAnswered() {

@@ -101,6 +101,7 @@ func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
 	var (
 		state     *trState
 		wg        sync.WaitGroup
+		ticker    = time.NewTicker(250 * time.Millisecond)
 		respChan  = make(chan *respPkt)
 		traceChan = make(chan *tracePkt)
 	)
@@ -127,9 +128,11 @@ func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
 			state.addTracePkt(tracePkt) // Sent new trace packet.
 		case respPkt := <-respChan:
 			state.addRespPkt(respPkt) // Received new response packet.
-		case <-state.done():
-			wg.Wait()
-			return state.calcRTT()
+		case <-ticker.C:
+			if state.isFinished() {
+				wg.Wait()
+				return state.calcRTT()
+			}
 		}
 	}
 }
