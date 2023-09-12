@@ -55,6 +55,8 @@ func createPkt(conn net.Conn, ipID uint16) ([]byte, error) {
 		Window:  500,
 		PSH:     true,
 		ACK:     true,
+		Seq:     0,
+		Ack:     0,
 	}
 	if err := tcpLayer.SetNetworkLayerForChecksum(ipLayer); err != nil {
 		return nil, err

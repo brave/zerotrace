@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	l = log.New(os.Stderr, "0trace: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile)
+	l = log.New(os.Stderr, "0trace: ", log.Ldate|log.Lmicroseconds|log.LUTC|log.Lshortfile)
 )
 
 type receiver chan *respPkt
@@ -61,7 +61,7 @@ func NewDefaultConfig() *Config {
 // ZeroTrace implements the 0trace traceroute technique:
 // https://seclists.org/fulldisclosure/2007/Jan/145
 type ZeroTrace struct {
-	sync.RWMutex       // Guards seqsPerTuple.
+	sync.RWMutex
 	quit               chan struct{}
 	incoming, outgoing chan receiver
 	cfg                *Config
@@ -81,7 +81,7 @@ func OpenZeroTrace(c *Config) *ZeroTrace {
 	return zt
 }
 
-// Close closes this instance, terminating our pcap monitor.
+// Close closes this instance's
 func (z *ZeroTrace) Close() {
 	close(z.quit)
 }
@@ -89,7 +89,13 @@ func (z *ZeroTrace) Close() {
 // sendTracePkts sends trace packets to our target.  Once a packet was sent,
 // it's written to the given channel.  The given function is used to create an
 // IP ID that is set in the trace packet's IP header.
-func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, conn net.Conn) {
+func (z *ZeroTrace) sendTracePkts(
+	c chan *tracePkt,
+	createIPID func() uint16,
+	conn net.Conn,
+	wg *sync.WaitGroup,
+) {
+	defer wg.Done()
 	remoteIP, err := extractRemoteIP(conn)
 	if err != nil {
 		l.Printf("Error extracting remote IP address from connection: %v", err)
@@ -143,6 +149,7 @@ func (z *ZeroTrace) sendTracePkts(c chan *tracePkt, createIPID func() uint16, co
 func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
 	var (
 		state     *trState
+		wg        sync.WaitGroup
 		ticker    = time.NewTicker(time.Second)
 		quit      = make(chan struct{})
 		respChan  = make(chan *respPkt)
@@ -163,7 +170,8 @@ func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
 	defer func() { z.outgoing <- respChan }()
 
 	// Spawn goroutine that sends trace packets.
-	go z.sendTracePkts(traceChan, state.createIPID, conn)
+	wg.Add(1)
+	go z.sendTracePkts(traceChan, state.createIPID, conn, &wg)
 
 loop:
 	for {
@@ -182,12 +190,15 @@ loop:
 		case <-ticker.C:
 			state.summary()
 			if state.isFinished() {
+				// Wait until we're done sending trace packets.
+				wg.Wait()
+				l.Println("Done collecting response packets.")
 				break loop
 			}
 		}
 	}
 
-	return state.calcRTT(), nil
+	return state.calcRTT()
 }
 
 // listen opens a pcap handle and begins listening for incoming ICMP packets.
@@ -201,11 +212,12 @@ func (z *ZeroTrace) listen(quit chan struct{}) {
 
 	pcapHdl, err := openPcap(z.cfg.Interface, z.cfg.SnapLen, z.cfg.PktBufTimeout)
 	if err != nil {
-		log.Fatalf("Error opening pcap device: %v", err)
+		l.Fatalf("Error opening pcap device: %v", err)
 	}
 	defer pcapHdl.Close()
 	stream = gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
 
+	l.Println("Done setting up.  Starting listening loop.")
 	for {
 		select {
 		case <-quit:
@@ -228,7 +240,7 @@ func (z *ZeroTrace) listen(quit chan struct{}) {
 			// exceeded one we are looking for
 			respPkt, err := z.extractRcvdPkt(pkt)
 			if err != nil {
-				log.Fatalf("Error extracing response packet: %v", err)
+				l.Printf("Error extracting response packet: %v", err)
 			}
 			// Fan-out new packet to all running traceroutes.
 			for r := range receivers {

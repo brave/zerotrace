@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	reqTimeout = time.Second * 5
+	reqTimeout = time.Second * 3
 )
 
 var (
@@ -26,6 +26,10 @@ type tracePkt struct {
 	recvdFrom net.IP
 }
 
+func (p *respPkt) String() string {
+	return fmt.Sprintf("<- %s (ttl=%d, ip id=%d)", p.recvdFrom.String(), p.ttl, p.ipID)
+}
+
 // respPkt represents a packet that we received in response to a trace packet.
 // For simplicity, we re-use the trace packet here; in particular, the "recvd"
 // and "recvdFrom" fields.
@@ -38,8 +42,8 @@ func (p *tracePkt) isAnswered() bool {
 
 // String implements the Stringer interface.
 func (p *tracePkt) String() string {
-	return fmt.Sprintf("TTL=%d, IP ID=%d, sender=%s",
-		p.ttl, p.ipID, p.recvdFrom,
+	return fmt.Sprintf("%s (TTL=%d, IP ID=%d)",
+		p.recvdFrom, p.ttl, p.ipID,
 	)
 }
 
@@ -95,6 +99,8 @@ func (s *trState) addRespPkt(p *respPkt) error {
 
 	tracePkt, exists := s.tracePkts[p.ipID]
 	if !exists {
+		l.Printf("Non-existing IP ID: %d", p.ipID)
+		l.Printf("Non-existing pkt: %s", p)
 		return errInvalidResp
 	}
 	// Mark the trace packet as "received".
@@ -141,7 +147,7 @@ func (s *trState) summary() string {
 // trace packet that was answered by the client itself *or* for the trace
 // packet that made it the farthest to the client (i.e., the packet whose TTL
 // is the highest).
-func (s *trState) calcRTT() time.Duration {
+func (s *trState) calcRTT() (time.Duration, error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -174,6 +180,9 @@ func (s *trState) calcRTT() time.Duration {
 			}
 		}
 	}
-	l.Printf("Closest: %s", closestPkt)
-	return closestPkt.recvd.Sub(closestPkt.sent)
+	if closestPkt != nil {
+		l.Printf("Closest response packet from: %s", closestPkt)
+		return closestPkt.recvd.Sub(closestPkt.sent), nil
+	}
+	return time.Duration(0), errors.New("no response packets")
 }

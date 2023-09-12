@@ -41,7 +41,7 @@ func (m *mockConn) LocalAddr() net.Addr {
 func TestCreatePkt(t *testing.T) {
 	conn := &mockConn{}
 	ipID := uint16(1234)
-	rawPkt, err := createPkt(conn, &seqNums{}, ipID)
+	rawPkt, err := createPkt(conn, ipID)
 	if err != nil {
 		t.Fatalf("Failed to create packet for given conn: %v", err)
 	}

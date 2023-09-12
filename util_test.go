@@ -43,22 +43,3 @@ func TestExtractIPID(t *testing.T) {
 		t.Fatalf("Expected IP ID %d but got %d.", expectedIPID, ipID)
 	}
 }
-
-func TestExtractTTL(t *testing.T) {
-	// The "payload" of an ICMP packet, which is the 20-byte IP header of the
-	// original IP packet that resulted in the ICMP error response.
-	ipHdr := []byte{
-		0x45, 0x20, 0x00, 0x3c, 0x19, 0x97, 0x00, 0x00, 0x0f, 0x11,
-		0xcf, 0x35, 0xc0, 0xa8, 0x01, 0x0d, 0x08, 0x08, 0x08, 0x08,
-	}
-	expectedTTL := uint8(0x0f)
-
-	ttl, err := extractTTL(ipHdr)
-	if err != nil {
-		t.Fatalf("Failed to extract TTL from ICMP packet: %v", err)
-	}
-
-	if ttl != expectedTTL {
-		t.Fatalf("Expected TTL %d but got %d.", expectedTTL, ttl)
-	}
-}

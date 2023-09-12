@@ -11,6 +11,13 @@ var (
 	dummyAddr = net.ParseIP("1.2.3.4")
 )
 
+func failOnErr(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("Expected no error but got: %v", err)
+	}
+}
+
 func TestIsAnswered(t *testing.T) {
 	p := &tracePkt{}
 
@@ -133,8 +140,12 @@ func TestSummary(t *testing.T) {
 }
 
 func TestCalcRTT(t *testing.T) {
-	s := newTrState(dummyAddr)
-	now := time.Now().UTC()
+	var (
+		err error
+		rtt time.Duration
+		s   = newTrState(dummyAddr)
+		now = time.Now().UTC()
+	)
 
 	expectedRTT := time.Second
 	s.addTracePkt(&tracePkt{
@@ -143,7 +154,8 @@ func TestCalcRTT(t *testing.T) {
 		sent:  now.Add(-expectedRTT),
 		recvd: now,
 	})
-	rtt := s.calcRTT()
+	rtt, err = s.calcRTT()
+	failOnErr(t, err)
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
@@ -156,7 +168,8 @@ func TestCalcRTT(t *testing.T) {
 		sent:  now.Add(-expectedRTT),
 		recvd: now,
 	})
-	rtt = s.calcRTT()
+	rtt, err = s.calcRTT()
+	failOnErr(t, err)
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
@@ -170,7 +183,8 @@ func TestCalcRTT(t *testing.T) {
 		sent:  now.Add(-expectedRTT),
 		recvd: now,
 	})
-	rtt = s.calcRTT()
+	rtt, err = s.calcRTT()
+	failOnErr(t, err)
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
@@ -181,7 +195,8 @@ func TestCalcRTT(t *testing.T) {
 		ipID: 3,
 		sent: now.Add(-time.Second * 10),
 	})
-	rtt = s.calcRTT()
+	rtt, err = s.calcRTT()
+	failOnErr(t, err)
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
@@ -197,7 +212,8 @@ func TestCalcRTT(t *testing.T) {
 		recvd:     now,
 		recvdFrom: dummyAddr,
 	})
-	rtt = s.calcRTT()
+	rtt, err = s.calcRTT()
+	failOnErr(t, err)
 	if rtt != expectedRTT {
 		t.Fatalf("Expected RTT to be %s but got %s.", expectedRTT, rtt)
 	}
