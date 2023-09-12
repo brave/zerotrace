@@ -61,7 +61,7 @@ func NewDefaultConfig() *Config {
 // ZeroTrace implements the 0trace traceroute technique:
 // https://seclists.org/fulldisclosure/2007/Jan/145
 type ZeroTrace struct {
-	sync.RWMutex
+	sync.RWMutex       // Guards seqsPerTuple.
 	quit               chan struct{}
 	incoming, outgoing chan receiver
 	cfg                *Config
@@ -81,7 +81,7 @@ func OpenZeroTrace(c *Config) *ZeroTrace {
 	return zt
 }
 
-// Close closes this instance's
+// Close closes this instance, terminating our pcap monitor.
 func (z *ZeroTrace) Close() {
 	close(z.quit)
 }
