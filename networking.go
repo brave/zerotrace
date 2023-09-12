@@ -20,7 +20,7 @@ const (
 // payload.  The function assembles a TCP segment that resembles the given
 // net.Conn and has a small dummy payload.  The returned byte slice is ready to
 // be written to the wire when combined with an IP header.
-func createPkt(conn net.Conn, ipID uint16) ([]byte, error) {
+func createPkt(conn net.Conn) ([]byte, error) {
 	// Extract hosts and ports from our net.Conn object.
 	srcIP, strSrcPort, err := net.SplitHostPort(conn.LocalAddr().String())
 	if err != nil {

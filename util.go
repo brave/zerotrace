@@ -12,6 +12,7 @@ import (
 
 var (
 	errInvalidIPHeader = errors.New("invalid IP header")
+	errUnknownConn     = errors.New("unknown connection type")
 )
 
 // extractRemoteIP extracts the remote IP address from the given net.Conn.

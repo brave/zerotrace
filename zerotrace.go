@@ -1,7 +1,6 @@
 package zerotrace
 
 import (
-	"crypto/tls"
 	"log"
 	"net"
 	"os"
@@ -61,7 +60,6 @@ func NewDefaultConfig() *Config {
 // ZeroTrace implements the 0trace traceroute technique:
 // https://seclists.org/fulldisclosure/2007/Jan/145
 type ZeroTrace struct {
-	sync.RWMutex
 	quit               chan struct{}
 	incoming, outgoing chan receiver
 	cfg                *Config
@@ -70,14 +68,13 @@ type ZeroTrace struct {
 // OpenZeroTrace instantiates and starts a new ZeroTrace object that's going to
 // use the given configuration for its measurement.
 func OpenZeroTrace(c *Config) *ZeroTrace {
-	quit := make(chan struct{})
 	zt := &ZeroTrace{
 		cfg:      c,
 		incoming: make(chan receiver),
 		outgoing: make(chan receiver),
-		quit:     quit,
+		quit:     make(chan struct{}),
 	}
-	go zt.listen(quit)
+	go zt.listen()
 	return zt
 }
 
@@ -102,22 +99,19 @@ func (z *ZeroTrace) sendTracePkts(
 		return
 	}
 
+	ipConn := ipv4.NewConn(conn)
 	for ttl := z.cfg.TTLStart; ttl <= z.cfg.TTLEnd; ttl++ {
-		tempConn := conn.(*tls.Conn)
-		tcpConn := tempConn.NetConn()
-		ipConn := ipv4.NewConn(tcpConn)
-
-		// Set our net.Conn's TTL for future outgoing packets.
-		// We cannot parallelize this loop because the TTL is socket-dependent
-		// and we only have a single socket to work with.
+		// Set the net.Conn's TTL for future outgoing packets.  We cannot
+		// parallelize this loop because the TTL is socket-dependent and we only
+		// have a single socket to work with.
 		if err := ipConn.SetTTL(ttl); err != nil {
-			l.Printf("Error setting TTL: %v", err)
+			l.Printf("Error setting TTL for socket: %v", err)
 			return
 		}
 
 		for n := 0; n < z.cfg.NumProbes; n++ {
 			ipID := createIPID()
-			pkt, err := createPkt(conn, ipID)
+			pkt, err := createPkt(conn)
 			if err != nil {
 				l.Printf("Error creating packet: %v", err)
 				return
@@ -151,11 +145,9 @@ func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
 		state     *trState
 		wg        sync.WaitGroup
 		ticker    = time.NewTicker(time.Second)
-		quit      = make(chan struct{})
 		respChan  = make(chan *respPkt)
 		traceChan = make(chan *tracePkt)
 	)
-	defer close(quit)
 	defer close(respChan)
 	defer close(traceChan)
 
@@ -204,7 +196,7 @@ loop:
 // listen opens a pcap handle and begins listening for incoming ICMP packets.
 // New traceroutes register themselves with this function's event loop to
 // receive a copy of newly-captured ICMP packets.
-func (z *ZeroTrace) listen(quit chan struct{}) {
+func (z *ZeroTrace) listen() {
 	var (
 		receivers = make(map[receiver]bool)
 		stream    *gopacket.PacketSource
@@ -220,7 +212,7 @@ func (z *ZeroTrace) listen(quit chan struct{}) {
 	l.Println("Done setting up.  Starting listening loop.")
 	for {
 		select {
-		case <-quit:
+		case <-z.quit:
 			return
 		case r := <-z.incoming:
 			receivers[r] = true
@@ -262,8 +254,8 @@ func (z *ZeroTrace) extractRcvdPkt(packet gopacket.Packet) (*respPkt, error) {
 		return nil, err
 	}
 
-	// We're not interested in the response packet's TTL because by
-	// definition, it's always going to be 1.
+	// We're not interested in the response packet's TTL because by definition,
+	// it's always going to be 1.
 	return &respPkt{
 		ipID:      ipID,
 		recvd:     packet.Metadata().Timestamp,
