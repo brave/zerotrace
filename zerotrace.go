@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"golang.org/x/net/ipv4"
 )
 
 var (
@@ -59,22 +60,29 @@ func NewDefaultConfig() *Config {
 // ZeroTrace implements the 0trace traceroute technique:
 // https://seclists.org/fulldisclosure/2007/Jan/145
 type ZeroTrace struct {
+	cfg                *Config
 	quit               chan struct{}
 	incoming, outgoing chan receiver
-	cfg                *Config
+	rawConn            *ipv4.RawConn
 }
 
 // OpenZeroTrace instantiates and starts a new ZeroTrace object that's going to
 // use the given configuration for its measurement.
-func OpenZeroTrace(c *Config) *ZeroTrace {
+func OpenZeroTrace(c *Config) (*ZeroTrace, error) {
+	var err error
 	zt := &ZeroTrace{
 		cfg:      c,
 		incoming: make(chan receiver),
 		outgoing: make(chan receiver),
 		quit:     make(chan struct{}),
 	}
+	zt.rawConn, err = createRawIpConn()
+	if err != nil {
+		return nil, err
+	}
+
 	go zt.listen()
-	return zt
+	return zt, nil
 }
 
 // Close closes this instance's
@@ -103,7 +111,7 @@ func (z *ZeroTrace) sendTracePkts(
 
 	for ttl := z.cfg.TTLStart; ttl <= z.cfg.TTLEnd; ttl++ {
 		// Parallelize the sending of trace packets.
-		go func(ttl uint8) {
+		go func(ttl int) {
 			for n := 0; n < z.cfg.NumProbes; n++ {
 				pkt, err := createPkt(conn)
 				if err != nil {
@@ -112,18 +120,19 @@ func (z *ZeroTrace) sendTracePkts(
 				}
 
 				ipID := createIPID()
-				if err := sendRawPkt(ipID, uint8(ttl), remoteIP, pkt); err != nil {
+				h := newIpv4Header(ttl, int(ipID), remoteIP, len(pkt))
+				if err = z.rawConn.WriteTo(h, pkt, nil); err != nil {
 					l.Printf("Error sending trace packet: %v", err)
 					continue
 				}
 
 				c <- &tracePkt{
-					ttl:  ttl,
+					ttl:  uint8(ttl),
 					ipID: ipID,
 					sent: time.Now().UTC(),
 				}
 			}
-		}(uint8(ttl))
+		}(ttl)
 	}
 }
 

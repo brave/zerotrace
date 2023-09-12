@@ -80,37 +80,32 @@ func createPkt(conn net.Conn) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// sendRawPkt sends a raw trace packet to the given destination.  We need a raw
-// socket because we are manually setting the IP header's IP ID and TTL, which
-// is typically done by the kernel's network stack.
-//
-// We abuse net.ListenPacket to get a raw socket.  We only care about sending
-// packets and not about receiving them, so we use ip4:89 (OSPF) to "receive"
-// packets that we are unlikely to encounter.
-func sendRawPkt(ipID uint16, ttl uint8, dstAddr net.IP, payload []byte) error {
+// createRawIpConn returns a new raw IPv4 connection.  We (ab)use
+// net.ListenPacket to get a raw socket.  We only care about sending packets and
+// not about receiving them, so we use ip4:89 (OSPF) to "receive" packets that
+// we are unlikely to encounter.
+func createRawIpConn() (*ipv4.RawConn, error) {
 	c, err := net.ListenPacket("ip4:89", "0.0.0.0")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer c.Close()
 
 	r, err := ipv4.NewRawConn(c)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer r.Close()
+	return r, nil
+}
 
-	iph := &ipv4.Header{
+// newIpv4Header returns a new IPv4 header.
+func newIpv4Header(ttl, id int, dstAddr net.IP, payloadLen int) *ipv4.Header {
+	return &ipv4.Header{
 		Version:  ipv4.Version,
 		Len:      ipv4.HeaderLen,
-		TotalLen: ipv4.HeaderLen + 20 + len(payload),
-		ID:       int(ipID),
-		TTL:      int(ttl),
+		TotalLen: ipv4.HeaderLen + 20 + payloadLen,
+		ID:       id,
+		TTL:      ttl,
 		Protocol: 6, // TCP
 		Dst:      dstAddr,
 	}
-	if err := r.WriteTo(iph, payload, nil); err != nil {
-		return err
-	}
-	return nil
 }
