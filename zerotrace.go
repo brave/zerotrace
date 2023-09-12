@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"golang.org/x/net/ipv4"
 )
 
 var (
@@ -99,16 +98,7 @@ func (z *ZeroTrace) sendTracePkts(
 		return
 	}
 
-	ipConn := ipv4.NewConn(conn)
 	for ttl := z.cfg.TTLStart; ttl <= z.cfg.TTLEnd; ttl++ {
-		// Set the net.Conn's TTL for future outgoing packets.  We cannot
-		// parallelize this loop because the TTL is socket-dependent and we only
-		// have a single socket to work with.
-		if err := ipConn.SetTTL(ttl); err != nil {
-			l.Printf("Error setting TTL for socket: %v", err)
-			return
-		}
-
 		for n := 0; n < z.cfg.NumProbes; n++ {
 			ipID := createIPID()
 			pkt, err := createPkt(conn)
