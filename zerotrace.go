@@ -129,8 +129,8 @@ func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
 		case respPkt := <-respChan:
 			state.addRespPkt(respPkt) // Received new response packet.
 		case <-ticker.C:
+			wg.Wait()
 			if state.isFinished() {
-				wg.Wait()
 				return state.calcRTT()
 			}
 		}
