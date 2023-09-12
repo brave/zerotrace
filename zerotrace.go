@@ -100,11 +100,18 @@ func (z *ZeroTrace) sendTracePkts(
 	wg *sync.WaitGroup,
 ) {
 	defer wg.Done()
-	remoteIP, err := extractRemoteIP(conn)
+
+	dstAddr, err := extractRemoteIP(conn)
 	if err != nil {
 		l.Printf("Error extracting remote IP address from connection: %v", err)
 		return
 	}
+	pktPayload, err := createPkt(conn)
+	if err != nil {
+		l.Printf("Error creating trace packet payload: %v", err)
+		return
+	}
+	hdr := newIpv4Header(0, 0, dstAddr, len(pktPayload))
 
 	l.Println("Starting to send trace packets.")
 	defer l.Println("Done sending trace packets.")
@@ -112,20 +119,16 @@ func (z *ZeroTrace) sendTracePkts(
 	for ttl := z.cfg.TTLStart; ttl <= z.cfg.TTLEnd; ttl++ {
 		// Parallelize the sending of trace packets.
 		go func(ttl int) {
+			hdr.TTL = ttl
+			// Send n probe packets for redundancy, in case some get lost.
+			// Each probe packet shares a TTL but has a unique ID.
 			for n := 0; n < z.cfg.NumProbes; n++ {
-				pkt, err := createPkt(conn)
-				if err != nil {
-					l.Printf("Error creating trace packet: %v", err)
-					return
-				}
-
 				ipID := createIPID()
-				h := newIpv4Header(ttl, int(ipID), remoteIP, len(pkt))
-				if err = z.rawConn.WriteTo(h, pkt, nil); err != nil {
+				hdr.ID = int(ipID)
+				if err = z.rawConn.WriteTo(hdr, pktPayload, nil); err != nil {
 					l.Printf("Error sending trace packet: %v", err)
 					continue
 				}
-
 				c <- &tracePkt{
 					ttl:  uint8(ttl),
 					ipID: ipID,
