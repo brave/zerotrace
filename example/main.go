@@ -85,7 +85,7 @@ func wssHandler(w http.ResponseWriter, r *http.Request) {
 	// Start 0trace measurement in the background.
 	go func() {
 		myConn := c.UnderlyingConn()
-		zt := zerotrace.NewZeroTrace(zerotrace.NewDefaultConfig())
+		zt := zerotrace.OpenZeroTrace(zerotrace.NewDefaultConfig())
 		rtt, err := zt.CalcRTT(myConn)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
