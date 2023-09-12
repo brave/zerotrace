@@ -112,9 +112,11 @@ func (z *ZeroTrace) sendTracePkts(
 		return
 	}
 
-	l.Println("Starting to send trace packets.")
-	defer l.Println("Done sending trace packets.")
-
+	start := time.Now().UTC()
+	defer func() {
+		diff := time.Now().UTC().Sub(start)
+		l.Printf("Sent trace packets in: %v", diff)
+	}()
 	for ttl := z.cfg.TTLStart; ttl <= z.cfg.TTLEnd; ttl++ {
 		// Parallelize the sending of trace packets.
 		go func(ttl int) {
