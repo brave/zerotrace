@@ -64,6 +64,7 @@ type ZeroTrace struct {
 	quit               chan struct{}
 	incoming, outgoing chan receiver
 	rawConn            *ipv4.RawConn
+	ipids              *ipIdState
 }
 
 // OpenZeroTrace instantiates and starts a new ZeroTrace object that's going to
@@ -75,6 +76,7 @@ func OpenZeroTrace(c *Config) (*ZeroTrace, error) {
 		incoming: make(chan receiver),
 		outgoing: make(chan receiver),
 		quit:     make(chan struct{}),
+		ipids:    newIpIdState(),
 	}
 	zt.rawConn, err = createRawIpConn()
 	if err != nil {
@@ -95,7 +97,6 @@ func (z *ZeroTrace) Close() {
 // IP ID that is set in the trace packet's IP header.
 func (z *ZeroTrace) sendTracePkts(
 	c chan *tracePkt,
-	createIPID func() uint16,
 	conn net.Conn,
 	wg *sync.WaitGroup,
 ) {
@@ -124,7 +125,11 @@ func (z *ZeroTrace) sendTracePkts(
 			// Send n probe packets for redundancy, in case some get lost.
 			// Each probe packet shares a TTL but has a unique ID.
 			for n := 0; n < z.cfg.NumProbes; n++ {
-				ipID := createIPID()
+				ipID, err := z.ipids.borrow()
+				if err != nil {
+					l.Printf("Error borrowing IPID: %v", err)
+					continue
+				}
 				hdr.ID = int(ipID)
 				if err = z.rawConn.WriteTo(hdr, pktPayload, nil); err != nil {
 					l.Printf("Error sending trace packet: %v", err)
@@ -168,7 +173,7 @@ func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
 
 	// Spawn goroutine that sends trace packets.
 	wg.Add(1)
-	go z.sendTracePkts(traceChan, state.createIPID, conn, &wg)
+	go z.sendTracePkts(traceChan, conn, &wg)
 
 loop:
 	for {
@@ -179,6 +184,7 @@ loop:
 
 		// We just received a packet in response to a trace packet.
 		case respPkt := <-respChan:
+
 			if err := state.addRespPkt(respPkt); err != nil {
 				l.Printf("Error adding response packet: %v", err)
 			}
@@ -203,6 +209,7 @@ loop:
 // receive a copy of newly-captured ICMP packets.
 func (z *ZeroTrace) listen() {
 	var (
+		ticker    = time.NewTicker(3 * time.Second)
 		receivers = make(map[receiver]bool)
 		stream    *gopacket.PacketSource
 	)
@@ -219,6 +226,8 @@ func (z *ZeroTrace) listen() {
 		select {
 		case <-z.quit:
 			return
+		case <-ticker.C:
+			z.ipids.releaseUnanswered()
 		case r := <-z.incoming:
 			receivers[r] = true
 		case r := <-z.outgoing:
@@ -239,6 +248,7 @@ func (z *ZeroTrace) listen() {
 			if err != nil {
 				l.Printf("Error extracting response packet: %v", err)
 			}
+			z.ipids.release(respPkt.ipID)
 			// Fan-out new packet to all running traceroutes.
 			for r := range receivers {
 				r <- respPkt

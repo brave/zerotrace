@@ -3,17 +3,21 @@ package zerotrace
 import (
 	"errors"
 	"fmt"
+	"math"
+	"math/rand"
 	"net"
 	"sync"
 	"time"
 )
 
 const (
-	reqTimeout = time.Second * 3
+	reqTimeout  = time.Second * 3
+	ipidTimeout = time.Second * 10
 )
 
 var (
 	errInvalidResp = errors.New("got response for non-existing trace packet")
+	errNoMoreIds   = errors.New("all IP IDs are currently in flight")
 )
 
 // tracePkts represents a trace packet that we send to the client to determine
@@ -56,7 +60,6 @@ type trState struct {
 	sync.RWMutex
 	dstAddr   net.IP
 	tracePkts map[uint16]*tracePkt
-	ipIDCtr   uint16
 }
 
 // newTrState returns a new traceroute state object.
@@ -67,20 +70,60 @@ func newTrState(dstAddr net.IP) *trState {
 	}
 }
 
-// createIPID returns the next available IP ID for use in outgoing trace
-// packets.  We rely on the IP ID field to link incoming ICMP error packets to
-// previously-sent trace packets, so it's important that IP IDs are only used
-// once, to prevent ambiguity in linking.  This function provides a simple,
-// monotonically increasing counter.
-func (s *trState) createIPID() uint16 {
+type ipIdState struct {
+	sync.Mutex // Guards ipids.
+	ipids      map[uint16]time.Time
+}
+
+func newIpIdState() *ipIdState {
+	return &ipIdState{
+		ipids: make(map[uint16]time.Time),
+	}
+}
+
+func (s *ipIdState) size() int {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.ipIDCtr == ^uint16(0) {
-		l.Println("IP ID counter is overflowing to 0.")
+	return len(s.ipids)
+}
+
+func (s *ipIdState) borrow() (uint16, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	if len(s.ipids) == math.MaxUint16 {
+		return 0, errNoMoreIds
 	}
-	s.ipIDCtr++
-	return s.ipIDCtr
+
+	start := uint16(rand.Intn(math.MaxUint16))
+	for id := start + 1; id != start; id++ {
+		if _, exists := s.ipids[id]; !exists {
+			s.ipids[id] = time.Now().UTC()
+			return id, nil
+		}
+	}
+
+	return 0, nil
+}
+
+func (s *ipIdState) releaseUnanswered() {
+	s.Lock()
+	defer s.Unlock()
+
+	now := time.Now().UTC()
+	for id, added := range s.ipids {
+		if now.Sub(added) > ipidTimeout {
+			delete(s.ipids, id)
+		}
+	}
+}
+
+func (s *ipIdState) release(id uint16) {
+	s.Lock()
+	defer s.Unlock()
+
+	delete(s.ipids, id)
 }
 
 // AddTracePkt adds to the state map a trace packet.
@@ -99,8 +142,6 @@ func (s *trState) addRespPkt(p *respPkt) error {
 
 	tracePkt, exists := s.tracePkts[p.ipID]
 	if !exists {
-		l.Printf("Non-existing IP ID: %d", p.ipID)
-		l.Printf("Non-existing pkt: %s", p)
 		return errInvalidResp
 	}
 	// Mark the trace packet as "received".
