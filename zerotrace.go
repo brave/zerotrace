@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
 	"golang.org/x/net/ipv4"
 )
 
@@ -26,30 +27,47 @@ type ZeroTrace struct {
 	incoming, outgoing chan receiver
 	rawConn            *ipv4.RawConn
 	ipids              *ipIdPool
+	pcap               *pcap.Handle
 }
 
 // OpenZeroTrace instantiates and starts a new ZeroTrace object that's going to
 // use the given configuration for its measurement.
 func OpenZeroTrace(c *Config) (*ZeroTrace, error) {
-	var err error
-	zt := &ZeroTrace{
+	var (
+		err error
+		zt  = newZeroTrace(c)
+	)
+
+	zt.rawConn, err = createRawIpConn()
+	if err != nil {
+		return nil, err
+	}
+
+	zt.pcap, err = openPcap(c.Interface, c.SnapLen, c.PktBufTimeout)
+	if err != nil {
+		return nil, err
+	}
+	go zt.listen(gopacket.NewPacketSource(
+		zt.pcap,
+		zt.pcap.LinkType(),
+	).Packets())
+
+	return zt, nil
+}
+
+func newZeroTrace(c *Config) *ZeroTrace {
+	return &ZeroTrace{
 		cfg:      c,
 		incoming: make(chan receiver),
 		outgoing: make(chan receiver),
 		quit:     make(chan struct{}),
 		ipids:    newIpIdState(),
 	}
-	zt.rawConn, err = createRawIpConn()
-	if err != nil {
-		return nil, err
-	}
-
-	go zt.listen()
-	return zt, nil
 }
 
 // Close closes this ZeroTrace object.
 func (z *ZeroTrace) Close() {
+	z.pcap.Close()
 	close(z.quit)
 }
 
@@ -153,32 +171,28 @@ func (z *ZeroTrace) sendTracePkts(
 // listen opens a pcap handle and begins listening for incoming ICMP packets.
 // New traceroutes register themselves with this function's event loop to
 // receive a copy of newly-captured ICMP packets.
-func (z *ZeroTrace) listen() {
+func (z *ZeroTrace) listen(pktStream chan gopacket.Packet) {
 	var (
 		ticker    = time.NewTicker(3 * time.Second)
 		receivers = make(map[receiver]bool)
-		stream    *gopacket.PacketSource
 	)
-
-	pcapHdl, err := openPcap(z.cfg.Interface, z.cfg.SnapLen, z.cfg.PktBufTimeout)
-	if err != nil {
-		l.Fatalf("Error opening pcap device: %v", err)
-	}
-	defer pcapHdl.Close()
-	stream = gopacket.NewPacketSource(pcapHdl, pcapHdl.LinkType())
 
 	l.Println("Starting listening loop.")
 	for {
 		select {
 		case <-z.quit:
+			l.Println("Quitting listening loop.")
 			return
 		case <-ticker.C:
 			z.ipids.releaseUnanswered()
+			l.Printf("Released un-answered IP IDs; %d left.", z.ipids.size())
 		case r := <-z.incoming:
+			l.Println("Registering new packet receiver.")
 			receivers[r] = true
 		case r := <-z.outgoing:
+			l.Printf("Unregistering packet receiver; %d left.", len(receivers))
 			delete(receivers, r)
-		case pkt := <-stream.Packets():
+		case pkt := <-pktStream:
 			if pkt == nil {
 				continue
 			}
