@@ -1,6 +1,7 @@
 package zerotrace
 
 import (
+	"errors"
 	"log"
 	"net"
 	"os"
@@ -14,7 +15,8 @@ import (
 )
 
 var (
-	l = log.New(os.Stderr, "0trace: ", log.Ldate|log.Lmicroseconds|log.LUTC|log.Lshortfile)
+	l         = log.New(os.Stderr, "0trace: ", log.Ldate|log.Lmicroseconds|log.LUTC|log.Lshortfile)
+	errNoIcmp = errors.New("not an ICMP packet")
 )
 
 type receiver chan *respPkt
@@ -30,48 +32,46 @@ type ZeroTrace struct {
 	pcap               *pcap.Handle
 }
 
-// OpenZeroTrace instantiates and starts a new ZeroTrace object that's going to
-// use the given configuration for its measurement.
-func OpenZeroTrace(c *Config) (*ZeroTrace, error) {
-	var (
-		err error
-		zt  = newZeroTrace(c)
-	)
-
-	zt.rawConn, err = createRawIpConn()
-	if err != nil {
-		return nil, err
-	}
-
-	zt.pcap, err = openPcap(c.Interface, c.SnapLen, c.PktBufTimeout)
-	if err != nil {
-		return nil, err
-	}
-	go zt.listen(gopacket.NewPacketSource(
-		zt.pcap,
-		zt.pcap.LinkType(),
-	).Packets())
-
-	return zt, nil
-}
-
-func newZeroTrace(c *Config) *ZeroTrace {
+// NewZeroTrace returns a new ZeroTrace object that uses the given
+// configuration.
+func NewZeroTrace(c *Config) *ZeroTrace {
 	return &ZeroTrace{
 		cfg:      c,
 		incoming: make(chan receiver),
 		outgoing: make(chan receiver),
 		quit:     make(chan struct{}),
-		ipids:    newIpIdState(),
+		ipids:    newIpIdPool(),
 	}
 }
 
-// Close closes this ZeroTrace object.
+// Start starts the ZeroTrace object.  This function instructs ZeroTrace to
+// start its event loop and to begin capturing network packets.
+func (z *ZeroTrace) Start() error {
+	var err error
+	z.rawConn, err = createRawIpConn()
+	if err != nil {
+		return err
+	}
+
+	z.pcap, err = openPcap(z.cfg.Interface, z.cfg.SnapLen, z.cfg.PktBufTimeout)
+	if err != nil {
+		return err
+	}
+	go z.listen(gopacket.NewPacketSource(
+		z.pcap,
+		z.pcap.LinkType(),
+	).Packets())
+
+	return nil
+}
+
+// Close closes the ZeroTrace object.
 func (z *ZeroTrace) Close() {
 	z.pcap.Close()
 	close(z.quit)
 }
 
-// CalcRTT coordinates our 0trace traceroute and returns the RTT to the target
+// CalcRTT starts a new 0trace traceroute and returns the RTT to the target
 // or, if the target won't respond to us, the RTT of the hop that's closest.
 // The given net.Conn represents an already-established TCP connection to the
 // target.  Note that the TCP connection may be corrupted as part of the 0trace
@@ -193,20 +193,9 @@ func (z *ZeroTrace) listen(pktStream chan gopacket.Packet) {
 			l.Printf("Unregistering packet receiver; %d left.", len(receivers))
 			delete(receivers, r)
 		case pkt := <-pktStream:
-			if pkt == nil {
-				continue
-			}
-			ipLayer := pkt.Layer(layers.LayerTypeIPv4)
-			icmpLayer := pkt.Layer(layers.LayerTypeICMPv4)
-			if ipLayer == nil || icmpLayer == nil {
-				continue
-			}
-
-			// If it is an ICMP packet, check if it is the ICMP TTL
-			// exceeded one we are looking for
-			respPkt, err := z.extractRcvdPkt(pkt)
+			respPkt, err := z.parseIcmpPkt(pkt)
 			if err != nil {
-				l.Printf("Error extracting response packet: %v", err)
+				l.Printf("Error parsing ICMP packet: %v", err)
 			}
 			z.ipids.release(respPkt.ipID)
 			// Fan-out new packet to all running traceroutes.
@@ -217,11 +206,17 @@ func (z *ZeroTrace) listen(pktStream chan gopacket.Packet) {
 	}
 }
 
-// extractRcvdPkt extracts what we need (IP ID, timestamp, address) from the
-// given network packet.
-func (z *ZeroTrace) extractRcvdPkt(packet gopacket.Packet) (*respPkt, error) {
+// parseIcmpPkt extracts what we need (IP ID, timestamp, address) from the
+// given ICMP packet.
+func (z *ZeroTrace) parseIcmpPkt(packet gopacket.Packet) (*respPkt, error) {
+	if packet == nil {
+		return nil, errNoIcmp
+	}
 	ipv4Layer := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 	icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
+	if ipv4Layer == nil || icmpLayer == nil {
+		return nil, errNoIcmp
+	}
 	icmpPkt, _ := icmpLayer.(*layers.ICMPv4)
 
 	ipID, err := extractIPID(icmpPkt.LayerPayload())
