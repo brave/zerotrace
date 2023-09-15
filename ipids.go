@@ -18,7 +18,7 @@ type ipIdPool struct {
 	ipids      map[uint16]time.Time
 }
 
-func newIpIdState() *ipIdPool {
+func newIpIdPool() *ipIdPool {
 	return &ipIdPool{
 		ipids: make(map[uint16]time.Time),
 	}
@@ -41,6 +41,7 @@ func (s *ipIdPool) borrow() (uint16, error) {
 		return 0, errNoMoreIds
 	}
 
+	// Start at a random index and look for available IP IDs.
 	start := uint16(rand.Intn(math.MaxUint16))
 	for id := start + 1; id != start; id++ {
 		if _, exists := s.ipids[id]; !exists {

@@ -8,7 +8,7 @@ import (
 func TestExhaustGlobalState(t *testing.T) {
 	var (
 		err error
-		s   = newIpIdState()
+		s   = newIpIdPool()
 	)
 
 	// Exhaust the global state.
@@ -27,7 +27,7 @@ func TestGlobalState(t *testing.T) {
 	var (
 		numIDs = 100
 		ipids  = []uint16{}
-		s      = newIpIdState()
+		s      = newIpIdPool()
 	)
 
 	for i := 0; i < numIDs; i++ {
@@ -41,6 +41,23 @@ func TestGlobalState(t *testing.T) {
 		s.release(id)
 	}
 	assertEqual(t, s.size(), 0)
+}
+
+func BenchmarkBorrow(b *testing.B) {
+	var (
+		err error
+		p   *ipIdPool
+	)
+
+	for i := 0; i < b.N; i++ {
+		p = newIpIdPool()
+		for j := 0; j < math.MaxUint16; j++ {
+			_, err = p.borrow()
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
 }
 
 func assertEqual(t *testing.T, is, should interface{}) {
