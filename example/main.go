@@ -65,45 +65,46 @@ func getIdxHandler(domain, addr string) http.HandlerFunc {
 	}
 }
 
-func wssHandler(w http.ResponseWriter, r *http.Request) {
-	l.Println("Handling new WebSocket request.")
+func getWssHandler(z *zerotrace.ZeroTrace) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		l.Println("Handling new WebSocket request.")
 
-	var upgrader = websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-	}
-	c, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer c.Close()
-	l.Println("Successfully upgraded request to WebSocket.")
-
-	done := make(chan bool)
-	// Start 0trace measurement in the background.
-	go func() {
-		myConn := c.UnderlyingConn()
-		zt := zerotrace.OpenZeroTrace(zerotrace.NewDefaultConfig())
-		rtt, err := zt.CalcRTT(myConn)
+		var upgrader = websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+		}
+		c, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-		l.Printf("Round trip time to client: %dms", rtt.Milliseconds())
-		close(done)
-	}()
-
-	// Keep the client around while the measurement is running because we need
-	// to take advantage of the already-established TCP connection.
-	for {
-		select {
-		case <-done:
-			l.Println("0trace measurement is done.")
 			return
-		case <-time.Tick(time.Second):
-			if err := c.WriteMessage(websocket.TextMessage, []byte("ping")); err != nil {
-				l.Printf("Error writing message to WebSocket conn: %v", err)
+		}
+		defer c.Close()
+		l.Println("Successfully upgraded request to WebSocket.")
+
+		done := make(chan bool)
+		// Start 0trace measurement in the background.
+		go func() {
+			myConn := c.UnderlyingConn()
+			rtt, err := z.CalcRTT(myConn)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			l.Printf("Round trip time to client: %dms", rtt.Milliseconds())
+			close(done)
+		}()
+
+		// Keep the client around while the measurement is running because we need
+		// to take advantage of the already-established TCP connection.
+		for {
+			select {
+			case <-done:
+				l.Println("0trace measurement is done.")
+				return
+			case <-time.Tick(time.Second):
+				if err := c.WriteMessage(websocket.TextMessage, []byte("ping")); err != nil {
+					l.Printf("Error writing message to WebSocket conn: %v", err)
+				}
 			}
 		}
 	}
@@ -120,8 +121,13 @@ func main() {
 		l.Fatal("Specify domain name by using the -domain flag.")
 	}
 
+	z := zerotrace.NewZeroTrace(zerotrace.NewDefaultConfig())
+	if err := z.Start(); err != nil {
+		l.Fatalf("Error starting ZeroTrace: %v", err)
+	}
+
 	router := chi.NewRouter()
-	router.Get("/wss", wssHandler)
+	router.Get("/wss", getWssHandler(z))
 	router.Get("/", getIdxHandler(domain, addr))
 
 	certManager := autocert.Manager{
