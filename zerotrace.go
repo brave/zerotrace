@@ -178,10 +178,10 @@ func (z *ZeroTrace) listen(pktStream chan gopacket.Packet) {
 	)
 
 	l.Println("Starting listening loop.")
+	defer l.Println("Leaving listening loop.")
 	for {
 		select {
 		case <-z.quit:
-			l.Println("Quitting listening loop.")
 			return
 		case <-ticker.C:
 			z.ipids.releaseUnanswered()
