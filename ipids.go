@@ -57,11 +57,19 @@ func (s *ipIdPool) releaseUnanswered() {
 	s.Lock()
 	defer s.Unlock()
 
-	now := time.Now().UTC()
+	var (
+		before = len(s.ipids)
+		now    = time.Now().UTC()
+	)
+
 	for id, added := range s.ipids {
 		if now.Sub(added) > ipidTimeout {
 			delete(s.ipids, id)
 		}
+	}
+	numPruned := before - len(s.ipids)
+	if numPruned > 0 {
+		l.Printf("Pruned %d un-released IP IDs.", numPruned)
 	}
 }
 
