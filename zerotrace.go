@@ -81,8 +81,8 @@ func (z *ZeroTrace) CalcRTT(conn net.Conn) (time.Duration, error) {
 		state     *trState
 		wg        sync.WaitGroup
 		ticker    = time.NewTicker(250 * time.Millisecond)
-		respChan  = make(chan *respPkt)
-		traceChan = make(chan *tracePkt)
+		respChan  = make(chan *respPkt, 1)
+		traceChan = make(chan *tracePkt, 1)
 	)
 	defer close(respChan)
 	defer close(traceChan)
@@ -200,7 +200,11 @@ func (z *ZeroTrace) listen(pktStream chan gopacket.Packet) {
 			z.ipids.release(respPkt.ipID)
 			// Fan-out new packet to all running traceroutes.
 			for r := range receivers {
-				r <- respPkt
+				// A receiver's channel may be full if the receiver is done with
+				// the scan and has already exited its event loop.
+				if len(r) == 0 {
+					r <- respPkt
+				}
 			}
 		}
 	}
