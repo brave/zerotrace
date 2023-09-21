@@ -41,7 +41,8 @@ func (s *ipIdPool) borrow() (uint16, error) {
 		return 0, errNoMoreIds
 	}
 
-	// Start at a random index and look for available IP IDs.
+	// Start at a random index and look for available IP IDs.  The id may wrap
+	// back to 0.
 	start := uint16(rand.Intn(math.MaxUint16))
 	for id := start + 1; id != start; id++ {
 		if _, exists := s.ipids[id]; !exists {
