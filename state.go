@@ -9,11 +9,8 @@ import (
 )
 
 const (
-	reqTimeout = time.Second * 5
-)
-
-var (
-	errInvalidResp = errors.New("got response for non-existing trace packet")
+	reqTimeout  = time.Second * 3
+	ipidTimeout = time.Second * 10
 )
 
 // tracePkts represents a trace packet that we send to the client to determine
@@ -31,29 +28,27 @@ type tracePkt struct {
 // and "recvdFrom" fields.
 type respPkt tracePkt
 
-// IsAnswered returns true if the given trace packet has seen a response.
-func (p *tracePkt) IsAnswered() bool {
+// isAnswered returns true if the given trace packet has seen a response.
+func (p *tracePkt) isAnswered() bool {
 	return !p.sent.IsZero() && !p.recvd.IsZero()
 }
 
 // String implements the Stringer interface.
 func (p *tracePkt) String() string {
-	return fmt.Sprintf("Trace packet with IP ID=%d\n\tTTL: %d\n\t"+
-		"Sent: %s\n\tRecvd: %s (from %s)\n",
-		p.ipID, p.ttl, p.sent, p.recvd, p.recvdFrom,
+	return fmt.Sprintf("%s (TTL=%d, IP ID=%d)",
+		p.recvdFrom, p.ttl, p.ipID,
 	)
 }
 
 // trState represents our traceroute state machine.  We keep track of the
 // following:
-//   1) The IP address of the client that is the target of our traceroute.
-//   2) Packets that we sent and received as part of the traceroute.
-//   3) The IP IDs that we use as part of the traceroute.
+//  1. The IP address of the client that is the target of our traceroute.
+//  2. Packets that we sent and received as part of the traceroute.
+//  3. The IP IDs that we use as part of the traceroute.
 type trState struct {
-	sync.RWMutex
-	dstAddr   net.IP
-	tracePkts map[uint16]*tracePkt
-	ipIDCtr   uint16
+	sync.Mutex // Guard tracePkts.
+	dstAddr    net.IP
+	tracePkts  map[uint16]*tracePkt
 }
 
 // newTrState returns a new traceroute state object.
@@ -64,24 +59,8 @@ func newTrState(dstAddr net.IP) *trState {
 	}
 }
 
-// createIPID returns the next available IP ID for use in outgoing trace
-// packets.  We rely on the IP ID field to link incoming ICMP error packets to
-// previously-sent trace packets, so it's important that IP IDs are only used
-// once, to prevent ambiguity in linking.  This function provides a simple,
-// monotonically increasing counter.
-func (s *trState) createIPID() uint16 {
-	s.Lock()
-	defer s.Unlock()
-
-	if s.ipIDCtr == ^uint16(0) {
-		l.Println("IP ID counter is overflowing to 0.")
-	}
-	s.ipIDCtr++
-	return s.ipIDCtr
-}
-
 // AddTracePkt adds to the state map a trace packet.
-func (s *trState) AddTracePkt(p *tracePkt) {
+func (s *trState) addTracePkt(p *tracePkt) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -90,30 +69,29 @@ func (s *trState) AddTracePkt(p *tracePkt) {
 
 // AddRespPkt adds to the state map a packet that we got in response to a
 // previously-sent trace packet.
-func (s *trState) AddRespPkt(p *respPkt) error {
+func (s *trState) addRespPkt(p *respPkt) {
 	s.Lock()
 	defer s.Unlock()
 
 	tracePkt, exists := s.tracePkts[p.ipID]
 	if !exists {
-		return errInvalidResp
+		return
 	}
 	// Mark the trace packet as "received".
 	tracePkt.recvd = p.recvd
 	tracePkt.recvdFrom = p.recvdFrom
-	return nil
 }
 
-// IsFinished returns true if our state indicates that the 0trace scan is
+// isFinished returns true if our state indicates that the 0trace scan is
 // finished.  That's the case when we haven't received any response packets
 // since the timeout.
-func (s *trState) IsFinished() bool {
-	s.RLock()
-	defer s.RUnlock()
+func (s *trState) isFinished() bool {
+	s.Lock()
+	defer s.Unlock()
 
 	now := time.Now().UTC()
 	for _, p := range s.tracePkts {
-		if p.IsAnswered() {
+		if p.isAnswered() {
 			continue
 		}
 		if now.Sub(p.sent) < reqTimeout {
@@ -123,14 +101,14 @@ func (s *trState) IsFinished() bool {
 	return true
 }
 
-// Summary returns a printable string summary of the current traceroute state.
-func (s *trState) Summary() string {
-	s.RLock()
-	defer s.RUnlock()
+// summary returns a printable string summary of the current traceroute state.
+func (s *trState) summary() string {
+	s.Lock()
+	defer s.Unlock()
 
 	numRcvd := 0
 	for _, p := range s.tracePkts {
-		if p.IsAnswered() {
+		if p.isAnswered() {
 			numRcvd++
 		}
 	}
@@ -138,18 +116,17 @@ func (s *trState) Summary() string {
 		len(s.tracePkts), numRcvd)
 }
 
-// CalcRTT determines the RTT between us and the client by looking for the
+// calcRTT determines the RTT between us and the client by looking for the
 // trace packet that was answered by the client itself *or* for the trace
 // packet that made it the farthest to the client (i.e., the packet whose TTL
 // is the highest).
-func (s *trState) CalcRTT() time.Duration {
-	s.RLock()
-	defer s.RUnlock()
+func (s *trState) calcRTT() (time.Duration, error) {
+	s.Lock()
+	defer s.Unlock()
 
-	l.Printf("Iterating over %d trace packets.", len(s.tracePkts))
 	var closestPkt *tracePkt
 	for _, p := range s.tracePkts {
-		if !p.IsAnswered() {
+		if !p.isAnswered() {
 			continue
 		}
 		if closestPkt == nil {
@@ -176,6 +153,9 @@ func (s *trState) CalcRTT() time.Duration {
 			}
 		}
 	}
-	l.Printf("Closest trace packet: %s", closestPkt)
-	return closestPkt.recvd.Sub(closestPkt.sent)
+	if closestPkt != nil {
+		l.Printf("Closest response packet from: %s", closestPkt)
+		return closestPkt.recvd.Sub(closestPkt.sent), nil
+	}
+	return time.Duration(0), errors.New("no response packets")
 }
