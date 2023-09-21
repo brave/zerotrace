@@ -51,7 +51,7 @@ func BenchmarkBorrow(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		p = newIpIdPool()
-		for j := 0; j < math.MaxUint16; j++ {
+		for j := 0; j <= math.MaxUint16; j++ {
 			_, err = p.borrow()
 			if err != nil {
 				b.Fatal(err)
