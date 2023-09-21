@@ -185,12 +185,9 @@ func (z *ZeroTrace) listen(pktStream chan gopacket.Packet) {
 			return
 		case <-ticker.C:
 			z.ipids.releaseUnanswered()
-			l.Printf("Released un-answered IP IDs; %d left.", z.ipids.size())
 		case r := <-z.incoming:
-			l.Println("Registering new packet receiver.")
 			receivers[r] = true
 		case r := <-z.outgoing:
-			l.Printf("Unregistering packet receiver; %d left.", len(receivers))
 			delete(receivers, r)
 		case pkt := <-pktStream:
 			respPkt, err := z.parseIcmpPkt(pkt)
