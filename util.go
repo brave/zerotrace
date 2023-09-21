@@ -1,6 +1,7 @@
 package zerotrace
 
 import (
+	"encoding/binary"
 	"errors"
 	"net"
 	"time"
@@ -37,7 +38,7 @@ func extractIPID(ipPkt []byte) (uint16, error) {
 		return 0, err
 	}
 
-	return uint16(ipPkt[4])<<8 | uint16(ipPkt[5]), nil
+	return binary.BigEndian.Uint16(ipPkt[4:]), nil
 }
 
 // openPcap returns a new pcap handle that listens for ICMP packets.
