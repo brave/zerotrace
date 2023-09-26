@@ -193,6 +193,7 @@ func (z *ZeroTrace) listen(pktStream chan gopacket.Packet) {
 			respPkt, err := z.parseIcmpPkt(pkt)
 			if err != nil {
 				l.Printf("Error parsing ICMP packet: %v", err)
+				continue
 			}
 			z.ipids.release(respPkt.ipID)
 			// Fan-out new packet to all running traceroutes.
